@@ -1,0 +1,1101 @@
+const path = require("path");
+const axios = require("axios");
+const { app, dialog, shell } = require("electron");
+const { createWriteStream } = require("fs");
+const fs = require("fs").promises; // 使用 fs.promises 进行异步文件操作
+const logger = require("./logger");
+const { detectJianyingDraftRoot } = require("./draftPathDetect");
+const { v4: uuidv4 } = require('uuid');
+
+const RECORD_MAX = 500;
+
+const LOG_MAX = 2000;
+
+const axiosConfig = {
+  method: "GET",
+  timeout: 30000, // 30秒超时
+  headers: {
+    // 添加常见的浏览器User-Agent
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+  },
+};
+
+function isHttpUrl(value) {
+  if (!value || typeof value !== "string") return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function inferMaterialSubDir(materialType, material) {
+  if (materialType === "audios") return "audios";
+  if (materialType === "videos") {
+    return material?.type === "photo" ? "images" : "videos";
+  }
+  return "misc";
+}
+
+function getFileExtFromUrl(url, fallbackExt = ".bin") {
+  try {
+    const pathname = new URL(url).pathname || "";
+    const ext = path.extname(pathname);
+    return ext || fallbackExt;
+  } catch {
+    return fallbackExt;
+  }
+}
+
+function sanitizeFilename(value) {
+  if (!value || typeof value !== "string") return "";
+  return value.replace(/[\\/:*?"<>|]/g, "_").trim();
+}
+
+async function downloadRemoteMaterialFile(fileUrl, localPath) {
+  const response = await axios({
+    ...axiosConfig,
+    url: fileUrl,
+    responseType: "stream",
+  });
+  if (response.status !== 200) {
+    throw new Error(`[error] [material] request failed, status code: ${response.status}`);
+  }
+  await fs.mkdir(path.dirname(localPath), { recursive: true });
+  const writer = response.data.pipe(createWriteStream(localPath, { flags: "w", mode: 0o666 }));
+  await new Promise((resolve, reject) => {
+    writer.on("close", resolve);
+    writer.on("error", (err) => {
+      fs.unlink(localPath).catch(() => { });
+      reject(err);
+    });
+    response.data.on("error", (err) => {
+      writer.destroy();
+      fs.unlink(localPath).catch(() => { });
+      reject(err);
+    });
+  });
+}
+
+/**
+ * Windows 上“权限异常”多与只读属性有关；Node 对文件的 fs.chmod(0o666) 会清除只读位。
+ * 下载完成后统一处理，避免 copyFile / 外部软件间歇性带上只读导致剪映无法改写素材。
+ */
+async function ensureWindowsDraftFilesWritable(rootDir) {
+  if (process.platform !== "win32" || !rootDir) return;
+  const stack = [rootDir];
+  while (stack.length) {
+    const current = stack.pop();
+    let entries;
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const ent of entries) {
+      const full = path.join(current, ent.name);
+      if (ent.isSymbolicLink()) continue;
+      try {
+        if (ent.isDirectory()) {
+          stack.push(full);
+        } else if (ent.isFile()) {
+          await fs.chmod(full, 0o666);
+        }
+      } catch (e) {
+        logger.warn(`[perm] 无法调整文件权限（已跳过）: ${full} — ${e.message}`);
+      }
+    }
+  }
+}
+
+const MAX_DOWNLOAD_ATTEMPTS = 6;
+
+/** 拉取 get_draft：首次请求 + 2 次重试（共 3 次），自开始起硬截止 3000ms 内必须结束 */
+const GET_DRAFT_FETCH_MAX_ATTEMPTS = 3;
+const GET_DRAFT_FETCH_DEADLINE_MS = 3000;
+const GET_DRAFT_FETCH_PER_ATTEMPT_MAX_MS = 800;
+const GET_DRAFT_FETCH_BACKOFF_MS = [120, 200];
+
+function isRetryableGetDraftError(error) {
+  if (!error) return false;
+  if (error.response) {
+    const status = error.response.status;
+    return status === 408 || status === 429 || status >= 500;
+  }
+  const code = error.code;
+  if (code === "ENOTFOUND" || code === "ECONNREFUSED") return false;
+  return true;
+}
+
+async function requestGetDraftOnce(remoteUrl, timeoutMs) {
+  return axios({
+    ...axiosConfig,
+    url: remoteUrl,
+    responseType: "json",
+    timeout: timeoutMs,
+  });
+}
+
+async function fetchGetDraftWithRetry(remoteUrl) {
+  const deadline = Date.now() + GET_DRAFT_FETCH_DEADLINE_MS;
+  const timeLeftMs = () => deadline - Date.now();
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= GET_DRAFT_FETCH_MAX_ATTEMPTS; attempt++) {
+    if (timeLeftMs() <= 0) break;
+
+    if (attempt > 1) {
+      const planned = GET_DRAFT_FETCH_BACKOFF_MS[attempt - 2] ?? 100;
+      const wait = Math.min(planned, Math.max(0, timeLeftMs() - 1));
+      if (wait > 0) {
+        await new Promise((resolve) => setTimeout(resolve, wait));
+      }
+      if (timeLeftMs() <= 0) break;
+    }
+
+    const timeout = Math.min(
+      GET_DRAFT_FETCH_PER_ATTEMPT_MAX_MS,
+      Math.max(1, timeLeftMs())
+    );
+
+    try {
+      return await requestGetDraftOnce(remoteUrl, timeout);
+    } catch (error) {
+      lastError = error;
+      const willRetry =
+        attempt < GET_DRAFT_FETCH_MAX_ATTEMPTS &&
+        timeLeftMs() > 0 &&
+        isRetryableGetDraftError(error);
+      if (willRetry) {
+        logger.warn(
+          `[warn] get draft url attempt ${attempt}/${GET_DRAFT_FETCH_MAX_ATTEMPTS} failed: ${error.message}`
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw lastError;
+}
+
+async function retryDownloadTask(task, options = {}) {
+  const {
+    maxAttempts = MAX_DOWNLOAD_ATTEMPTS,
+    retryDelayMs = 1000,
+    onAttempt = null,
+    onRetry = null,
+    onExhausted = null,
+  } = options;
+
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      if (typeof onAttempt === "function") {
+        await onAttempt(attempt, maxAttempts);
+      }
+      return await task(attempt, maxAttempts);
+    } catch (error) {
+      lastError = error;
+      const hasNextAttempt = attempt < maxAttempts;
+      if (hasNextAttempt) {
+        if (typeof onRetry === "function") {
+          await onRetry(error, attempt, maxAttempts);
+        }
+        if (retryDelayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+        }
+        continue;
+      }
+      if (typeof onExhausted === "function") {
+        await onExhausted(error, attempt, maxAttempts);
+      }
+      throw error;
+    }
+  }
+
+  throw lastError || new Error("retryDownloadTask failed without explicit error");
+}
+
+async function localizeRemoteMaterialPaths(materials, draftRootDir, parentWindow, sharedCache = null) {
+  if (!materials || typeof materials !== "object") return;
+  const supportedTypes = ["videos", "audios"];
+  const cache = sharedCache instanceof Map ? sharedCache : new Map();
+
+  for (const materialType of supportedTypes) {
+    const list = materials[materialType];
+    if (!Array.isArray(list)) continue;
+    for (let i = 0; i < list.length; i++) {
+      const item = list[i];
+      if (!item || typeof item !== "object") continue;
+      if (!isHttpUrl(item.path)) continue;
+
+      const subDir = inferMaterialSubDir(materialType, item);
+      const fallbackExt = materialType === "audios" ? ".mp3" : ".mp4";
+      const ext = getFileExtFromUrl(item.path, fallbackExt);
+      const baseName = sanitizeFilename(item.material_name || item.name || item.id || uuidv4());
+      const fileName = baseName.toLowerCase().endsWith(ext.toLowerCase())
+        ? baseName
+        : `${baseName}${ext}`;
+      const localPath = path.join(draftRootDir, "assets", subDir, fileName);
+
+      if (!cache.has(item.path)) {
+        try {
+          await retryDownloadTask(
+            async () => {
+              await downloadRemoteMaterialFile(item.path, localPath);
+            },
+            {
+              onAttempt: async (attempt) => {
+                const attemptMessage = attempt === 1
+                  ? `正在下载 URL 素材到本地：${fileName}`
+                  : `正在下载 URL 素材到本地：${fileName}（第${attempt - 1}次重试）`;
+                await appendDownloadLog(
+                  {
+                    level: "loading",
+                    message: attemptMessage,
+                  },
+                  parentWindow
+                );
+              },
+              onRetry: async (err, attempt) => {
+                logger.warn(
+                  `[warn] 下载URL素材失败，准备重试(${attempt}/${MAX_DOWNLOAD_ATTEMPTS}): ${item.path}`,
+                  err?.message || err
+                );
+              },
+              onExhausted: async () => {
+                await appendDownloadLog(
+                  {
+                    level: "error",
+                    message: `URL 素材下载失败（已重试${MAX_DOWNLOAD_ATTEMPTS - 1}次，共尝试${MAX_DOWNLOAD_ATTEMPTS}次）：${fileName}`,
+                  },
+                  parentWindow
+                );
+              },
+            }
+          );
+          cache.set(item.path, localPath);
+        } catch (err) {
+          // URL 素材失败不影响同一草稿内其他文件下载，保留原 URL 路径。
+          logger.error(`[error] 下载URL素材失败，已达到重试上限: ${item.path}`, err);
+          continue;
+        }
+      }
+      item.path = cache.get(item.path);
+    }
+  }
+}
+
+function getConfigPath() {
+  return path.join(app.getPath("userData"), "app-config.json");
+}
+
+async function readConfig() {
+  const configPath = getConfigPath();
+  logger.info("[log] Config path:", configPath);
+  try {
+    const data = await fs.readFile(configPath, "utf8");
+    return JSON.parse(data) || {};
+  } catch (error) {
+    return {};
+  }
+}
+
+async function writeConfig(config) {
+  const configPath = getConfigPath();
+  try {
+    await fs.writeFile(configPath, JSON.stringify(config, null, 2), "utf8");
+    return true;
+  } catch (error) {
+    logger.error("写入配置文件失败:", error);
+    return false;
+  }
+}
+
+/**
+ * 未配置草稿路径时，按平台规则自动探测并写入配置。
+ */
+async function ensureAutoDetectedDraftPathInConfig() {
+  let config = await readConfig();
+  if (config.targetDirectory) {
+    return config;
+  }
+  const detected = await detectJianyingDraftRoot();
+  if (detected) {
+    config.targetDirectory = detected;
+    await writeConfig(config);
+    logger.info("[draft-detect] 已自动识别剪映草稿目录:", detected);
+  }
+  return config;
+}
+
+function getDownloadLogPath() {
+  return path.join(app.getPath("userData"), "download-log.json");
+}
+
+async function readDownloadLog() {
+  const logPath = getDownloadLogPath();
+  logger.info("[log] Log path:", logPath);
+  try {
+    const data = await fs.readFile(logPath, "utf8");
+    return JSON.parse(data);
+  } catch (error) {
+    return [];
+  }
+}
+
+/**
+ *
+ * @param {*} entry {time: Date, level: 'error', message: '日志内容' }
+ */
+async function appendDownloadLog(entry, parentWindow) {
+  const logPath = getDownloadLogPath();
+  let logs = [];
+  try {
+    logs = await readDownloadLog();
+  } catch (error) {
+    // 如果文件不存在或无法读取，初始化为空数组
+    logs = [];
+  }
+
+  entry.time = new Date();
+  console.log(`appendDownloadLog: ${JSON.stringify(entry)}`);
+  await parentWindow.webContents.send("file-operation-log", entry);
+  logs.push(entry);
+  if (logs.length > LOG_MAX) {
+    logs.shift();
+  }
+  try {
+    await fs.writeFile(logPath, JSON.stringify(logs, null, 2), "utf8");
+  } catch (writeErr) {
+    logger.error("写入日志文件失败:", writeErr);
+  }
+}
+
+async function clearDownloadLog() {
+  const logPath = getDownloadLogPath();
+  try {
+    await fs.writeFile(logPath, JSON.stringify([], null, 2), "utf8");
+    return true;
+  } catch (error) {
+    logger.error("清空日志文件失败:", error);
+    return false;
+  }
+}
+
+function getHistoryRecordPath() {
+  return path.join(app.getPath("userData"), "history-record.json");
+}
+
+async function readHistoryRecord() {
+  const recordPath = getHistoryRecordPath();
+  console.info("[History] Record path:", recordPath);
+  try {
+    const data = await fs.readFile(recordPath, "utf8");
+    return JSON.parse(data);
+  } catch (error) {
+    return [];
+  }
+}
+
+/**
+ *
+ * @param {*} entry {id: 'uuid', time: Date, draft_id: 'draft_id' draft_url: 'draft_url' }
+ */
+async function appendHistoryRecord(entry) {
+  const recordPath = getHistoryRecordPath();
+  let records = [];
+  try {
+    records = await readHistoryRecord();
+  } catch (error) {
+    // 如果文件不存在或无法读取，初始化为空数组
+    records = [];
+  }
+
+  console.log(`appendHistoryRecord: ${JSON.stringify(entry)}`);
+  records.push(entry);
+  if (records.length > RECORD_MAX) {
+    records.shift();
+  }
+  try {
+    await fs.writeFile(recordPath, JSON.stringify(records, null, 2), "utf8");
+  } catch (writeErr) {
+    console.error("写入草稿历史记录文件失败:", writeErr);
+  }
+}
+
+// 更精确的错误处理
+function errorHandler(error = {}, url = "") {
+  if (error.code === "ECONNREFUSED") {
+    throw new Error(`[error] not connect to server: ${url}`);
+  } else if (error.code === "ENOTFOUND") {
+    throw new Error(`[error] domain not found: ${url}`);
+  } else if (error.response) {
+    // 服务器返回了错误状态码（如4xx, 5xx）
+    throw new Error(`[error] server error (${error.response.status}): ${url}`);
+  } else {
+    throw error; // 重新抛出其他未知错误
+  }
+}
+
+async function getDraftUrls(remoteUrl, parentWindow) {
+  logger.info("[info] get draft url");
+  try {
+    const response = await fetchGetDraftWithRetry(remoteUrl);
+
+    // 检查HTTP状态码
+    if (response.status !== 200) {
+      await appendDownloadLog(
+        { level: "error", message: `获取草稿地址信息失败` },
+        parentWindow
+      );
+      throw new Error(
+        `[error] [draft url] request failed, status code: ${response.status}`
+      );
+    }
+    logger.info("[success] get draft url");
+    return response.data;
+  } catch (error) {
+    errorHandler(error, remoteUrl);
+  }
+}
+
+async function updateDraftPath(parentWindow) {
+  const targetDir = await getTargetDirectory(parentWindow, true);
+  if (!targetDir) {
+    return { success: false, error: "用户取消了目录选择" };
+  }
+  try {
+    // 验证目录权限
+    try {
+      await fs.access(targetDir, fs.constants.R_OK | fs.constants.W_OK);
+    } catch (accessError) {
+      logger.error('所选目录无读写权限:', accessError);
+      // 尝试使用 dialog 显示错误消息
+      if (parentWindow) {
+        const { dialog } = require('electron');
+        await dialog.showMessageBox(parentWindow, {
+          type: 'error',
+          title: '权限不足',
+          message: '所选目录没有足够的读写权限，请选择其他目录。',
+          buttons: ['确定']
+        });
+      }
+      return { success: false, error: '所选目录没有足够的读写权限' };
+    }
+
+    const configPath = getConfigPath();
+    let config = {};
+
+    // 尝试读取现有配置
+    try {
+      const data = await fs.readFile(configPath, "utf8");
+      config = JSON.parse(data);
+    } catch (error) {
+      // 如果文件不存在，保持config为空对象
+    }
+
+    config.targetDirectory = targetDir;
+
+    // 写回配置文件
+    await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
+    logger.info('默认草稿路径已更新为:', targetDir);
+    return { success: true, targetDir };
+  } catch (error) {
+    logger.error('更新默认草稿路径失败:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// 提取出来的函数，可选参数parentWindow用于显示对话框时附加到对话框
+async function getTargetDirectory(parentWindow = null, isUpdate = false) {
+  let config = await readConfig();
+  if (!isUpdate && config.targetDirectory) {
+    try {
+      await fs.access(config.targetDirectory, fs.constants.R_OK | fs.constants.W_OK);
+      return config.targetDirectory;
+    } catch (accessErr) {
+      logger.warn(
+        "配置的目录已不存在或无访问权限，将清除并尝试自动识别或手动选择。",
+        accessErr.message
+      );
+      delete config.targetDirectory;
+      await writeConfig(config);
+    }
+  }
+
+  if (!isUpdate) {
+    config = await ensureAutoDetectedDraftPathInConfig();
+    if (config.targetDirectory) {
+      try {
+        await fs.access(config.targetDirectory, fs.constants.R_OK | fs.constants.W_OK);
+        return config.targetDirectory;
+      } catch (e) {
+        logger.warn("自动识别的草稿目录不可读写，将打开目录选择:", e.message);
+        delete config.targetDirectory;
+        await writeConfig(config);
+      }
+    }
+  }
+
+  const dialogOptions = {
+    properties: ["openDirectory", "createDirectory"], // 允许创建新目录
+    title: "请选择目标目录",
+    buttonLabel: "选择此目录",
+    defaultPath: isUpdate ? config.targetDirectory : undefined
+  };
+
+  // 如果有父窗口，则附加到父窗口
+  if (parentWindow) {
+    dialogOptions.window = parentWindow;
+  }
+
+  const result = await dialog.showOpenDialog(dialogOptions);
+
+  if (!result.canceled && result.filePaths.length > 0) {
+    const selectedDir = result.filePaths[0];
+    
+    // 再次验证目录权限
+    try {
+      await fs.access(selectedDir, fs.constants.R_OK | fs.constants.W_OK);
+    } catch (accessErr) {
+      logger.error('所选目录无读写权限:', accessErr);
+      if (parentWindow) {
+        const { dialog } = require('electron');
+        await dialog.showMessageBox(parentWindow, {
+          type: 'error',
+          title: '权限不足',
+          message: '所选目录没有足够的读写权限，请重新选择。',
+          buttons: ['确定']
+        });
+      }
+      return ''; // 返回空字符串表示失败
+    }
+    
+    config.targetDirectory = selectedDir;
+    await writeConfig(config);
+    return selectedDir;
+  } else {
+    return '';
+  }
+}
+
+function updateValue(current, finalKey, targetDir, oldVal, targetId) {
+  if (oldVal) {
+    // 找到ID在路径中的位置
+    const idIndex = oldVal.indexOf(targetId);
+    if (idIndex === -1) return;
+
+    // 提取ID及之后的部分作为将要下载的路径
+    const relativePath = oldVal.substring(idIndex).replaceAll("/", path.sep); // 替换为系统路径分隔符
+    // targetDir 已包含 targetId 目录，所以relativePath中的targetId要去重
+    const newRelativePath = relativePath.replace(`${targetId}${path.sep}`, "");
+    const newValue = path.join(targetDir, newRelativePath);
+    current[finalKey] = newValue;
+
+    logger.info(`✅ newValue to:`, newValue);
+  }
+}
+
+// 递归遍历对象，更新所有名为path的属性
+function recursivelyUpdatePaths(obj, targetDir, targetId) {
+  // 处理数组
+  if (Array.isArray(obj)) {
+    obj.forEach((item) => {
+      recursivelyUpdatePaths(item, targetDir, targetId);
+    });
+    return;
+  }
+
+  // 处理对象
+  if (obj && typeof obj === "object") {
+    // 检查是否有path属性
+    if (obj.path && typeof obj.path === "string") {
+      updateValue(obj, "path", targetDir, obj.path, targetId);
+    }
+
+    // 递归处理所有属性
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        recursivelyUpdatePaths(obj[key], targetDir, targetId);
+      }
+    }
+  }
+}
+
+// 带错误处理的JSON文件下载
+async function downloadJsonFile(
+  { fileUrl, filePath, targetDir, targetId, materialDownloadCache },
+  parentWindow
+) {
+  // 1. 使用 Axios 下载 JSON 文件
+  try {
+    const response = await axios({
+      method: "GET",
+      url: fileUrl,
+      responseType: "json", // 直接告诉 Axios 解析 JSON
+    });
+
+    // 检查HTTP状态码
+    if (response.status !== 200) {
+      await appendDownloadLog(
+        { level: "error", message: `下载草稿内容文件失败` },
+        parentWindow
+      );
+      throw new Error(
+        `[error] [json] request failed, status code: ${response.status}`
+      );
+    }
+
+    // 2. 解析获取到的数据（Axios 会根据 responseType: 'json' 自动解析）
+    const jsonData = response.data;
+
+    // 3. 修改 JSON 数据中指定键的值
+    if (jsonData?.materials) {
+      logger.info(`[log] start modifyJsonValue: materials`);
+      recursivelyUpdatePaths(jsonData.materials, targetDir, targetId);
+      // 当素材 path 为 URL 时，下载到本地并回写为本地路径。
+      await localizeRemoteMaterialPaths(
+        jsonData.materials,
+        targetDir,
+        parentWindow,
+        materialDownloadCache
+      );
+    }
+
+    await appendDownloadLog(
+      {
+        level: "loading",
+        message: `正在将草稿内容文件写入本地草稿目录 ${targetDir}`,
+      },
+      parentWindow
+    );
+
+    // 4. 将修改后的 JSON 对象转换为格式化的字符串并写入本地文件
+    const jsonString = JSON.stringify(jsonData, null, 2); // 使用 2 个空格进行缩进，美化输出
+    await fs.writeFile(filePath, jsonString, { encoding: "utf8", mode: 0o666 });
+  } catch (error) {
+    logger.error(`下载JSON文件失败: ${fileUrl}`, error);
+    throw error;
+  }
+}
+
+async function downloadNotJsonFile(
+  { fileUrl, filePath, targetDir },
+  parentWindow
+) {
+  try {
+    // 1. 使用 Axios 下载非 JSON 文件
+    const response = await axios({
+      ...axiosConfig,
+      url: fileUrl,
+      responseType: "stream", // 设置响应类型为 'stream' 以处理大文件
+    });
+
+    // 检查HTTP状态码
+    if (response.status !== 200) {
+      await appendDownloadLog(
+        { level: "error", message: `下载草稿内容文件失败` },
+        parentWindow
+      );
+      throw new Error(
+        `[error] [stream] request failed, status code: ${response.status}`
+      );
+    }
+
+    logger.info(`[log] start create writable stream: ${filePath}`);
+
+    await appendDownloadLog(
+      {
+        level: "loading",
+        message: `正在将草稿内容文件写入本地草稿目录 ${targetDir}`,
+      },
+      parentWindow
+    );
+
+    // 创建可写流
+    // 显式指定 flags 和 mode，避免 Windows 下文件句柄共享模式异常
+    const writer = response.data.pipe(createWriteStream(filePath, { flags: "w", mode: 0o666 }));
+
+    return new Promise((resolve, reject) => {
+      // 监听 close 而非 finish：finish 仅表示数据写完，close 才表示文件句柄已释放
+      // 在 Windows 上，句柄未释放时其他进程访问该文件会出现权限异常（EACCES）
+      writer.on("close", resolve);
+      writer.on("error", (err) => {
+        // 尝试删除可能不完整的文件
+        fs.unlink(filePath).catch(() => { });
+        reject(new Error(`[error] write file failed: ${err.message}`));
+      });
+      response.data.on("error", (err) => {
+        reject(new Error(`[error] download stream error: ${err.message}`));
+      });
+    });
+  } catch (error) {
+    logger.error(`下载非JSON文件失败: ${fileUrl}`, error);
+    // 不使用errorHandler，直接抛出错误以便上层进行重试
+    throw error;
+  }
+}
+
+/**
+ * 下载单个文件并保存到指定路径的辅助函数
+ * @param {string} url 远程文件的URL
+ * @param {string} filePath 要保存到的本地文件路径
+ */
+async function downloadSingleFile(config, parentWindow) {
+  const filePath = config.filePath;
+  const fileUrl = config.fileUrl;
+  const fileName = path.basename(filePath);
+
+  // 已知 draft_content.json 与 draft_info.json 内容一致时，直接复用，避免重复构建与重复下载 URL 素材。
+  if (fileName === "draft_info.json") {
+    const contentFilePath = path.join(path.dirname(filePath), "draft_content.json");
+    try {
+      await fs.access(contentFilePath, fs.constants.R_OK);
+      await fs.copyFile(contentFilePath, filePath);
+      logger.info(`[log] draft_info.json 直接复用 draft_content.json: ${filePath}`);
+      return;
+    } catch {
+      // draft_content.json 不存在时回退到原逻辑，保证兼容。
+    }
+  }
+
+  if (fileUrl.endsWith(".json")) {
+    logger.info(`[log] start download json file : ${filePath}`);
+    await downloadJsonFile(config, parentWindow);
+  } else {
+    logger.info(`[log] start download non-json file : ${filePath}`);
+    await downloadNotJsonFile(config, parentWindow);
+  }
+}
+
+/**
+ * 触发目录扫描，激活剪映的目录发现机制
+ * 原理：将草稿目录复制到临时目录，触发文件系统变更通知，让剪映无需重启即可感知到新草稿
+ * - Windows：使用 robocopy（内置工具，返回码 0-7 均为成功）
+ * - macOS：使用 rsync（触发 FSEvents 变更通知）
+ * @param {string} targetDir 草稿目录路径
+ */
+async function triggerDirectoryScan(targetDir) {
+  if (!targetDir) return;
+
+  try {
+    await fs.access(targetDir);
+  } catch {
+    // 目录不存在则跳过
+    return;
+  }
+
+  const tmpDir = targetDir + ".tmp";
+  const { execFile } = require("child_process");
+  const platform = process.platform;
+
+  await new Promise((resolve) => {
+    if (platform === "win32") {
+      // Windows：使用 robocopy 触发 ReadDirectoryChangesW 通知
+      const args = [
+        targetDir,
+        tmpDir,
+        "/E",        // 递归复制所有子目录
+        "/COPY:DAT", // 复制数据、属性和时间戳（无需管理员权限）
+        "/R:1",      // 失败重试1次
+        "/W:1",      // 重试等待1秒
+        "/NP",       // 不显示进度百分比
+        "/NJH",      // 不显示作业头
+        "/NJS",      // 不显示作业摘要
+      ];
+      execFile("robocopy", args, { windowsHide: true }, (err) => {
+        // robocopy 返回码 0-7 均表示成功或正常状态，8+ 才是错误
+        const code = err ? err.code : 0;
+        if (typeof code === "number" && code >= 8) {
+          logger.warn(`[scan] Windows 触发目录扫描失败，robocopy 返回码: ${code}`);
+        } else {
+          logger.info(`[scan] Windows 触发目录扫描完成，robocopy 返回码: ${code}`);
+        }
+        resolve();
+      });
+    } else if (platform === "darwin") {
+      // macOS：使用 rsync 触发 FSEvents 变更通知
+      // -a: 归档模式（递归+保留属性），触发目录写入事件
+      execFile("rsync", ["-a", targetDir + "/", tmpDir], (err) => {
+        if (err) {
+          logger.warn(`[scan] macOS 触发目录扫描失败: ${err.message}`);
+        } else {
+          logger.info(`[scan] macOS 触发目录扫描完成`);
+        }
+        resolve();
+      });
+    } else {
+      logger.info(`[scan] 当前平台 ${platform} 不支持触发目录扫描，跳过`);
+      resolve();
+    }
+  });
+
+  // 清理临时目录
+  try {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  } catch (e) {
+    logger.warn(`[scan] 清理临时目录失败 ${tmpDir}: ${e.message}`);
+  }
+}
+
+// 打开目录
+async function openDraftDirectory(dirPath) {
+  try {
+    const errorMsg = await shell.openPath(dirPath);
+    if (errorMsg) {
+      logger.error(`[error] Failed to open path: ${errorMsg}`);
+      return { success: false, error: errorMsg };
+    }
+    return { success: true };
+  } catch (error) {
+    logger.error(`[error] Error opening path: ${error}`);
+    return { success: false, error: error.message };
+  }
+}
+
+// 获取目标文件路径
+// 解析URL并创建必要的目录结构
+async function getTargetFilePath(fileUrl, baseTargetDir, targetId) {
+  const urlObj = new URL(fileUrl);
+  let fullPath = urlObj.pathname;
+
+  // 找到ID在路径中的位置
+  const idIndex = fullPath.indexOf(targetId);
+  if (idIndex === -1) return null;
+
+  // 提取ID及之后的部分作为将要下载的路径
+  const relativePath = fullPath.substring(idIndex).replaceAll("/", path.sep); // 替换为系统路径分隔符
+  const fullTargetPath = path.join(baseTargetDir, relativePath);
+  const targetDir = path.dirname(fullTargetPath);
+
+  logger.info("[log] fullTargetPath: " + fullTargetPath);
+  logger.info("[log] targetDir: " + targetDir);
+
+  // 确保目标目录存在
+  try {
+    await fs.mkdir(targetDir, { recursive: true }); // recursive: true 可以创建多级目录
+  } catch (mkdirError) {
+    logger.error(`创建目录失败: ${targetDir}`, mkdirError);
+    throw mkdirError;
+  }
+
+  return { fullTargetPath, targetDir };
+}
+
+// 带重试机制的单个文件下载
+// 实现单个文件最多下载6次（首轮+最多5次重试）
+async function downloadFileWithRetry(config, parentWindow, fileIndex) {
+  // 获取文件名用于日志显示
+  const fileName = path.basename(config.filePath);
+  try {
+    await retryDownloadTask(
+      async () => {
+        await downloadSingleFile(config, parentWindow);
+      },
+      {
+        onAttempt: async (attempt, maxAttempts) => {
+          const attemptMessage = attempt === 1
+            ? `正在下载草稿内容文件: ${fileName} (第${fileIndex}个文件)`
+            : `正在下载草稿内容文件: ${fileName} (第${fileIndex}个文件)（第${attempt - 1}次重试）`;
+          await appendDownloadLog(
+            {
+              level: "loading",
+              message: attemptMessage,
+            },
+            parentWindow
+          );
+          logger.info(
+            `[log] start get file context : ${config.fileUrl}, attempt: ${attempt}/${maxAttempts}`
+          );
+        },
+        onRetry: async (error, attempt, maxAttempts) => {
+          logger.error(
+            `[error] download file ${config.fileUrl} failed (attempt ${attempt}/${maxAttempts}):`,
+            error
+          );
+        },
+        onExhausted: async (error, attempt, maxAttempts) => {
+          logger.error(
+            `[error] download file ${config.fileUrl} exhausted retries (attempt ${attempt}/${maxAttempts}):`,
+            error
+          );
+          await appendDownloadLog(
+            {
+              level: "error",
+              message: `第 ${fileIndex} 个草稿信息文件下载失败（已重试${maxAttempts - 1}次，共尝试${maxAttempts}次）`,
+            },
+            parentWindow
+          );
+        },
+      }
+    );
+
+    logger.info(`[log] file saved to : ${config.filePath}`);
+    await appendDownloadLog(
+      { level: "success", message: `第 ${fileIndex} 个草稿信息文件保存成功` },
+      parentWindow
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// 批量下载文件主函数
+async function downloadFiles(
+  { sourceUrl, remoteFileUrls, targetId, isOpenDir },
+  parentWindow
+) {
+  try {
+    let baseTargetDir = "";
+    // 然后获取目标目录，将主窗口作为父窗口传递
+    try {
+      baseTargetDir = await getTargetDirectory(parentWindow);
+    } catch (error) {
+      logger.error("[log] get target dir fail:", error);
+      baseTargetDir = '';
+    }
+
+    if (!baseTargetDir) {
+      await appendDownloadLog(
+        { level: "error", message: `获取目录失败` },
+        parentWindow
+      );
+      return;
+    }
+
+    logger.info("[log] get target dir:", baseTargetDir);
+
+    await appendDownloadLog(
+      { level: "info", message: `创建剪映草稿目录：${targetId}` },
+      parentWindow
+    );
+
+    let successCount = 0;
+    let failureCount = 0;
+    const materialDownloadCache = new Map();
+    
+    // 2. 遍历远程文件URL数组
+    for (let i = 0; i < remoteFileUrls.length; i++) {
+      const fileUrl = remoteFileUrls[i];
+      const fileIndex = i + 1; // 文件索引从1开始
+      
+      try {
+        // 获取目标文件路径
+        const targetPaths = await getTargetFilePath(fileUrl, baseTargetDir, targetId);
+        
+        if (!targetPaths) {
+          logger.error(`[error] 无法获取第 ${fileIndex} 个文件的目标路径: ${fileUrl}`);
+          await appendDownloadLog(
+            { level: "error", message: `第 ${fileIndex} 个草稿信息文件路径解析失败` },
+            parentWindow
+          );
+          failureCount++;
+          continue; // 跳过当前文件
+        }
+        
+        const { fullTargetPath, targetDir } = targetPaths;
+        
+        // 带重试机制的下载文件
+        const downloadSuccess = await downloadFileWithRetry(
+          { fileUrl, filePath: fullTargetPath, targetDir, targetId, materialDownloadCache },
+          parentWindow,
+          fileIndex
+        );
+        
+        if (downloadSuccess) {
+          successCount++;
+        } else {
+          failureCount++;
+        }
+      } catch (error) {
+        logger.error(`[error] 处理第 ${fileIndex} 个文件时发生错误:`, error);
+        await appendDownloadLog(
+          { level: "error", message: `第 ${fileIndex} 个草稿信息文件处理失败` },
+          parentWindow
+        );
+        failureCount++;
+      }
+    }
+    
+    // 输出最终统计结果
+    await appendDownloadLog(
+      {
+        level: "all",
+        message: `下载完成：共 ${remoteFileUrls.length} 个文件，成功 ${successCount} 个，失败 ${failureCount} 个`
+      },
+      parentWindow
+    );
+
+    // {id: 'uuid', time: Date, draft_id: 'draft_id', draft_url: 'draft_url' }
+    await appendHistoryRecord({
+      id: uuidv4(),
+      time: new Date(),
+      draft_id: targetId,
+      draft_url: sourceUrl,
+    });
+    const jointPath = path.join(baseTargetDir, targetId);
+    logger.info(`[finish] all download: ${jointPath}`);
+
+    await ensureWindowsDraftFilesWritable(jointPath);
+
+    // 触发剪映目录扫描，使剪映无需重启即可识别新草稿
+    await triggerDirectoryScan(jointPath);
+
+    if (isOpenDir) await openDraftDirectory(jointPath);
+    
+    return {
+      success: true,
+      message: `文件批量保存完成，保存至目录: ${jointPath}，成功 ${successCount} 个，失败 ${failureCount} 个`,
+    };
+  } catch (error) {
+    logger.error(`[error] 批量保存过程发生错误:`, error);
+
+    await appendDownloadLog(
+      {
+        level: "error",
+        message: `下载失败：批量保存 ${targetId} 中的剪映草稿过程发生错误！`,
+      },
+      parentWindow
+    );
+    return { success: false, message: `保存失败: ${error.message} ` };
+  }
+}
+
+async function checkUrlAccessRight(url) {
+  try {
+    const response = await axios({
+      ...axiosConfig,
+      method: 'HEAD',
+      url: url,
+      timeout: 5000
+    });
+    logger.info(`URL Accessibility Check Result: ${url} - ${response.status}`);
+    return { accessible: response.status < 400 };
+  } catch (error) {
+    logger.error(`URL Accessibility Check Failed: ${url}`, error);
+    return { accessible: false, error: error.message };
+  }
+}
+
+module.exports = {
+  readDownloadLog,
+  clearDownloadLog,
+
+  updateDraftPath,
+
+  readConfig,
+  ensureAutoDetectedDraftPathInConfig,
+
+  getDraftUrls,
+
+  downloadFiles,
+
+  checkUrlAccessRight,
+
+  readHistoryRecord
+};
