@@ -44,8 +44,11 @@ async function chooseBackendPort() {
 
 function getPythonBackendCommand() {
   if (app.isPackaged) {
+    const backendFileName = process.platform === 'win32'
+      ? 'capcut-mate-backend.exe'
+      : 'capcut-mate-backend';
     return {
-      command: getResourcePath('backend', 'capcut-mate-backend.exe'),
+      command: getResourcePath('backend', backendFileName),
       args: []
     };
   }

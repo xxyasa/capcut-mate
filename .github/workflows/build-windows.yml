@@ -1,11 +1,44 @@
-name: Build Windows Desktop
+name: Build Desktop Release
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, for example v0.0.100-internal.1"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            backend_add_data_sep: ";"
+            installer_script: build-win-installer
+            green_script: build-win-green
+            artifact_name: capcut-mate-windows
+            artifact_paths: |
+              desktop-client/dist/capcut-mate-windows-x64-installer.exe
+              desktop-client/dist/capcut-mate-windows-x64-green.zip
+          - name: macOS
+            os: macos-latest
+            backend_add_data_sep: ":"
+            installer_script: build-mac-installer
+            green_script: build-mac-green
+            artifact_name: capcut-mate-macos
+            artifact_paths: |
+              desktop-client/dist/capcut-mate-macos-arm64-installer.dmg
+              desktop-client/dist/capcut-mate-macos-arm64-green.zip
 
     steps:
       - name: Checkout
@@ -29,36 +62,29 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Verify smart assets
-        shell: pwsh
+        shell: bash
         run: |
-          if (!(Test-Path "smart-assets/manifest.json")) {
-            throw "smart-assets/manifest.json not found. Commit smart-assets before running this workflow."
-          }
-          if (!(Test-Path "smart-assets/text_templates/文字模板2/key_value.json")) {
-            throw "Text template draft not found in smart-assets."
-          }
-          if (!(Test-Path "smart-assets/sound_effects/音效库2/key_value.json")) {
-            throw "Sound draft not found in smart-assets."
-          }
-          if (!(Test-Path "smart-assets/music/downLoadcfg")) {
-            throw "smart-assets/music/downLoadcfg not found."
-          }
+          test -f "smart-assets/manifest.json"
+          test -f "smart-assets/text_templates/文字模板2/key_value.json"
+          test -f "smart-assets/sound_effects/音效库2/key_value.json"
+          test -f "smart-assets/music/downLoadcfg"
 
       - name: Install Python dependencies
-        shell: pwsh
+        shell: bash
         run: |
           uv sync
           uv pip install pyinstaller
 
-      - name: Build backend exe
-        shell: pwsh
+      - name: Build backend
+        shell: bash
         run: |
-          uv run pyinstaller `
-            --name capcut-mate-backend `
-            --onedir `
-            --add-data "template;template" `
-            --add-data "config;config" `
-            --add-data "assets;assets" `
+          SEP='${{ matrix.backend_add_data_sep }}'
+          uv run pyinstaller \
+            --name capcut-mate-backend \
+            --onedir \
+            --add-data "template${SEP}template" \
+            --add-data "config${SEP}config" \
+            --add-data "assets${SEP}assets" \
             main.py
 
       - name: Install desktop dependencies
@@ -73,26 +99,56 @@ jobs:
         working-directory: desktop-client
         run: npm run web:build
 
-      - name: Build Windows installer
+      - name: Build installer
         working-directory: desktop-client
-        run: npm run build-win-installer
+        run: npm run ${{ matrix.installer_script }}
 
-      - name: Build Windows green zip
+      - name: Build green package
         working-directory: desktop-client
-        run: npm run build-win-green
+        run: npm run ${{ matrix.green_script }}
 
-      - name: Upload installer
+      - name: Upload package artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: capcut-mate-windows-installer
-          path: desktop-client/dist/capcut-mate-windows-x64-installer.exe
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_paths }}
           compression-level: 0
           if-no-files-found: error
 
-      - name: Upload green zip
-        uses: actions/upload-artifact@v4
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Resolve release version
+        id: release_version
+        shell: bash
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="internal-${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
         with:
-          name: capcut-mate-windows-green
-          path: desktop-client/dist/capcut-mate-windows-x64-green.zip
-          compression-level: 0
-          if-no-files-found: error
+          path: release-artifacts
+
+      - name: List release files
+        shell: bash
+        run: find release-artifacts -type f -maxdepth 3 -print
+
+      - name: Create or update release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_version.outputs.version }}
+          name: CapCut Mate ${{ steps.release_version.outputs.version }}
+          draft: false
+          prerelease: true
+          files: |
+            release-artifacts/capcut-mate-windows/capcut-mate-windows-x64-installer.exe
+            release-artifacts/capcut-mate-windows/capcut-mate-windows-x64-green.zip
+            release-artifacts/capcut-mate-macos/capcut-mate-macos-arm64-installer.dmg
+            release-artifacts/capcut-mate-macos/capcut-mate-macos-arm64-green.zip
