@@ -44,10 +44,16 @@ class SmartPackagingCaptionConfig(BaseModel):
     highlight_max_count: int = Field(default=30, ge=0, le=30, description="单个视频最多生成重点花字数量上限")
     highlight_max_chars: int = Field(default=5, ge=1, le=20, description="单条重点花字最大字数")
     highlight_font_size: int = Field(default=28, ge=1, description="重点花字字号")
-    highlight_transform_x_min: float = Field(default=-360.0, description="重点花字随机 X 轴最小位置，像素偏移")
-    highlight_transform_x_max: float = Field(default=360.0, description="重点花字随机 X 轴最大位置，像素偏移")
-    highlight_transform_y_min: float = Field(default=-700.0, description="重点花字随机 Y 轴最小位置，像素偏移；负值向上")
-    highlight_transform_y_max: float = Field(default=260.0, description="重点花字随机 Y 轴最大位置，像素偏移；正值向下")
+    text_template_scale: Optional[float] = Field(
+        default=None,
+        ge=0.1,
+        le=2.0,
+        description="剪映文字模板整体缩放；不填则按底部字幕字号自动缩放",
+    )
+    highlight_transform_x_min: float = Field(default=-782.0, description="重点花字随机 X 轴最小位置，像素偏移")
+    highlight_transform_x_max: float = Field(default=780.0, description="重点花字随机 X 轴最大位置，像素偏移")
+    highlight_transform_y_min: float = Field(default=520.0, description="重点花字随机 Y 轴最小位置，像素偏移；正值更靠上")
+    highlight_transform_y_max: float = Field(default=820.0, description="重点花字随机 Y 轴最大位置，像素偏移；正值更靠上")
 
     @model_validator(mode="after")
     def validate_highlight_position_range(self):
@@ -84,6 +90,7 @@ class SmartPackagingLlmCaptionConfig(BaseModel):
     endpoint: Optional[str] = Field(default=None, description="LLM chat/completions 接口地址")
     api_key: Optional[str] = Field(default=None, description="LLM API Key，可选；不填时复用 ASR Key")
     model: str = Field(default="deepseek-v4-flash", description="LLM 模型名称")
+    domain_terms: List[str] = Field(default_factory=list, description="专有名词标准词库，供 LLM 校准 ASR 同音误识别")
     timeout: int = Field(default=180, ge=1, le=1800, description="LLM 请求超时秒数")
 
 
@@ -131,7 +138,7 @@ class SmartPackagingStickerConfig(BaseModel):
     """贴纸配置。"""
 
     enabled: bool = Field(default=False, description="是否结合语境自动添加贴纸")
-    count: int = Field(default=6, ge=0, le=20, description="单个视频最多添加贴纸数量")
+    count: int = Field(default=0, ge=0, le=20, description="单个视频最多添加贴纸数量")
     duration: int = Field(default=900_000, ge=100_000, description="单个贴纸显示时长，微秒")
     scale_min: float = Field(default=0.32, ge=0.05, le=5.0, description="贴纸随机最小缩放")
     scale_max: float = Field(default=0.52, ge=0.05, le=5.0, description="贴纸随机最大缩放")

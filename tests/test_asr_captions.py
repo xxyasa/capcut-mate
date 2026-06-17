@@ -73,3 +73,29 @@ def test_custom_json_asr_upload_uses_ascii_filename(monkeypatch, tmp_path):
     assert captured["filename"] == "audio.mp3"
     assert captured["filename"].isascii()
     assert captured["video_url"] == "https://assets.example.com/video.mp4"
+
+
+def test_asr_auth_header_cleans_copied_bearer_prefix():
+    asr = SmartPackagingAsrConfig(
+        enabled=True,
+        endpoint="https://example.com/asr",
+        api_key="Authorization: Bearer sk-test-key\n",
+    )
+
+    assert asr_module._auth_headers(asr) == {"Authorization": "Bearer sk-test-key"}
+
+
+def test_asr_auth_header_rejects_non_ascii_key():
+    asr = SmartPackagingAsrConfig(
+        enabled=True,
+        endpoint="https://example.com/asr",
+        api_key="sk-测试",
+    )
+
+    try:
+        asr_module._auth_headers(asr)
+    except ValueError as exc:
+        assert "API Key" in str(exc)
+        assert "中文" in str(exc)
+    else:
+        raise AssertionError("expected invalid non-ascii API key to fail")

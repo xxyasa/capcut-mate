@@ -1,7 +1,10 @@
 import asyncio
+import hashlib
 import importlib
 import json
 from unittest.mock import Mock
+
+import pytest
 
 from src.schemas.smart_packaging import SmartPackagingRequest, SmartPackagingSoundEffectsRequest
 from src.schemas.smart_packaging import SmartPackagingLlmCaptionConfig
@@ -304,6 +307,93 @@ def test_llm_caption_polish_returns_multiple_highlights(monkeypatch):
     assert captions[0]["highlight"] == "铁锈红|包身"
 
 
+def test_llm_caption_polish_injects_domain_terms_for_model_correction(monkeypatch):
+    response = Mock()
+    response.raise_for_status = Mock()
+    response.json.return_value = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps(
+                        [
+                            {
+                                "index": 0,
+                                "text": "这是格兰芬都宝剑",
+                                "highlights": ["格兰芬都", "宝剑"],
+                            }
+                        ],
+                        ensure_ascii=False,
+                    )
+                }
+            }
+        ]
+    }
+
+    def fake_post(url, headers, json=None, timeout=None):
+        prompt = json["messages"][0]["content"][0]["text"]
+        assert "标准词库" in prompt
+        assert '"格兰芬多"' in prompt
+        assert "同音、近音或错字" in prompt
+        return response
+
+    monkeypatch.setattr("src.service.llm_caption_polish.requests.post", fake_post)
+
+    captions = polish_captions_with_llm(
+        [{"start": 0, "end": 1_000_000, "text": "这是格兰芬都宝剑"}],
+        SmartPackagingLlmCaptionConfig(
+            enabled=True,
+            endpoint="https://example.com/chat",
+            model="deepseek-v4-flash",
+            domain_terms=["格兰芬多", "宝剑"],
+        ),
+        fallback_api_key="sk-shared",
+    )
+
+    assert captions[0]["text"] == "这是格兰芬都宝剑"
+    assert captions[0]["highlights"] == ["格兰芬都", "宝剑"]
+    assert captions[0]["highlight"] == "格兰芬都|宝剑"
+
+
+def test_llm_caption_polish_uses_model_corrected_domain_terms(monkeypatch):
+    response = Mock()
+    response.raise_for_status = Mock()
+    response.json.return_value = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps(
+                        [
+                            {
+                                "index": 0,
+                                "text": "这是格兰芬多宝剑",
+                                "highlights": ["格兰芬多", "宝剑"],
+                            }
+                        ],
+                        ensure_ascii=False,
+                    )
+                }
+            }
+        ]
+    }
+
+    monkeypatch.setattr("src.service.llm_caption_polish.requests.post", lambda *args, **kwargs: response)
+
+    captions = polish_captions_with_llm(
+        [{"start": 0, "end": 1_000_000, "text": "这是格兰芬都宝剑"}],
+        SmartPackagingLlmCaptionConfig(
+            enabled=True,
+            endpoint="https://example.com/chat",
+            model="deepseek-v4-flash",
+            domain_terms=["格兰芬多", "宝剑"],
+        ),
+        fallback_api_key="sk-shared",
+    )
+
+    assert captions[0]["text"] == "这是格兰芬多宝剑"
+    assert captions[0]["highlights"] == ["格兰芬多", "宝剑"]
+    assert captions[0]["highlight"] == "格兰芬多|宝剑"
+
+
 def test_llm_caption_polish_filters_bad_highlight_phrases(monkeypatch):
     response = Mock()
     response.raise_for_status = Mock()
@@ -371,7 +461,7 @@ def test_llm_caption_polish_filters_sticky_spoken_fragments(monkeypatch):
 
 
 def test_highlight_filters_spoken_fragment_phrases():
-    bad_terms = ["那里是可以", "前方这边还", "前方还做了", "欢这一款包", "到这一款包", "喜欢到这一款包"]
+    bad_terms = ["那里是可以", "前方这边还", "前方还做了", "欢这一款包", "到这一款包", "喜欢到这一款包", "下方有到"]
     for term in bad_terms:
         assert not smart_packaging_module._is_valid_highlight_term(term)
 
@@ -401,6 +491,30 @@ def test_smart_packaging_falls_back_to_core_product_highlight_when_llm_term_is_b
     )
 
     assert [item["text"] for item in highlights] == ["包包"]
+
+
+def test_smart_packaging_only_extracts_product_like_highlights():
+    req = SmartPackagingRequest(
+        videos=[{"video_url": "https://assets.example.com/product.mp4", "duration": 4_000_000}],
+        caption={
+            "enabled": True,
+            "source": "manual",
+            "highlight_max_count": 5,
+            "highlight_max_chars": 5,
+        },
+    )
+
+    highlights = smart_packaging_module._build_highlight_captions(
+        [{"start": 1_000_000, "end": 2_000_000, "text": "下方有到一把象征着勇气的格兰芬多宝剑"}],
+        req,
+        smart_packaging_module.random.Random(1),
+        4_000_000,
+    )
+
+    texts = [item["text"] for item in highlights]
+    assert "下方有到" not in texts
+    assert set(texts).issubset({"勇气", "格兰芬多", "宝剑"})
+    assert texts
 
 
 def test_smart_packaging_splits_long_captions_semantically(monkeypatch):
@@ -492,6 +606,7 @@ def test_smart_packaging_adds_highlights_on_separate_track(monkeypatch):
         caption={
             "enabled": True,
             "source": "manual",
+            "highlight_style_mode": "effect",
             "text_effects": ["花字A"],
             "in_animations": ["入场A"],
             "highlight_max_count": 2,
@@ -513,14 +628,10 @@ def test_smart_packaging_adds_highlights_on_separate_track(monkeypatch):
     assert plain_captions[0]["keyword"]
     assert plain_captions[0]["keyword_color"] == "#ffe600"
     assert highlight_captions[0]["text"] in {"本质", "信任"}
-    assert "text_effect" not in highlight_captions[0]
-    assert highlight_captions[0]["text_color"]
-    assert highlight_captions[0]["border_color"]
-    assert highlight_captions[0]["has_shadow"] is True
-    assert highlight_captions[0]["shadow_info"]
+    assert highlight_captions[0]["text_effect"] == "花字A"
     assert highlight_captions[0]["in_animation"] == "入场A"
-    assert -360.0 <= highlight_captions[0]["transform_x"] <= 360.0
-    assert -700.0 <= highlight_captions[0]["transform_y"] <= 260.0
+    assert abs(highlight_captions[0]["transform_x"]) >= 450.0
+    assert 520.0 <= highlight_captions[0]["transform_y"] <= 820.0
     assert highlight_kwargs["transform_y"] == 0.0
     assert plain_kwargs["font_size"] != highlight_kwargs["font_size"]
     assert result.drafts[0].highlight_segment_ids
@@ -577,7 +688,7 @@ def test_smart_packaging_extracts_short_product_highlight_terms(monkeypatch):
             "enabled": True,
             "source": "manual",
             "text_effects": ["花字A"],
-            "highlight_max_count": 6,
+            "highlight_max_count": 8,
             "highlight_max_chars": 5,
         },
         sound_effects={"enabled": True, "count": 6, "auto_for_highlights": True, "use_jianying_cache": False},
@@ -597,13 +708,13 @@ def test_smart_packaging_extracts_short_product_highlight_terms(monkeypatch):
     assert "压纹" in highlight_texts
     assert audio_calls
     highlight_audio_infos = [item for audio_track in audio_calls for item in audio_track]
-    source_caption_count = len(
-        {
-            item.get("_source_caption_index")
-            for captions in caption_calls[1:]
-            for item in captions
-        }
-    )
+    source_caption_indices = {
+        item.get("_source_caption_index")
+        for captions in caption_calls[1:]
+        for item in captions
+    }
+    assert source_caption_indices == {0, 1, 2}
+    source_caption_count = len(source_caption_indices)
     assert len(highlight_audio_infos) == source_caption_count
     assert highlight_audio_infos[0]["start"] == caption_calls[1][0]["start"]
     assert "local_audio_path" in highlight_audio_infos[0]
@@ -616,6 +727,7 @@ def test_smart_packaging_uses_llm_highlight_terms():
         caption={
             "enabled": True,
             "source": "manual",
+            "highlight_style_mode": "effect",
             "text_effects": ["花字A"],
             "highlight_max_count": 3,
             "highlight_max_chars": 5,
@@ -631,9 +743,114 @@ def test_smart_packaging_uses_llm_highlight_terms():
     assert [item["text"] for item in highlights] == ["铁锈红", "包身"]
     assert highlights[0]["start"] == 0
     assert highlights[1]["start"] > highlights[0]["start"]
-    assert highlights[1]["end"] <= 1_000_000
-    assert "text_effect" not in highlights[0]
-    assert highlights[0]["has_shadow"] is True
+    assert highlights[1]["end"] <= 3_000_000
+    assert highlights[0]["font_size"] == req.caption.highlight_font_size
+    assert highlights[0]["text_effect"] == "花字A"
+
+
+def test_smart_packaging_limits_text_template_highlights_to_two_per_source_caption():
+    req = SmartPackagingRequest(
+        videos=[{"video_url": "https://assets.example.com/product.mp4", "duration": 3_000_000}],
+        caption={
+            "enabled": True,
+            "source": "manual",
+            "highlight_max_count": 6,
+            "highlight_max_chars": 5,
+        },
+    )
+
+    highlights = smart_packaging_module._build_highlight_captions(
+        [
+            {
+                "start": 0,
+                "end": 1_000_000,
+                "text": "铁锈红包身压纹拉链",
+                "highlights": ["铁锈红", "包身", "压纹", "拉链"],
+            }
+        ],
+        req,
+        smart_packaging_module.random.Random(1),
+    )
+
+    assert [item["text"] for item in highlights] == ["铁锈红", "包身"]
+    assert len([item for item in highlights if item["_source_caption_index"] == 0]) == 2
+
+
+def test_smart_packaging_skips_next_caption_after_highlight_caption_for_normal_terms():
+    req = SmartPackagingRequest(
+        videos=[{"video_url": "https://assets.example.com/product.mp4", "duration": 6_000_000}],
+        caption={
+            "enabled": True,
+            "source": "manual",
+            "highlight_max_count": 6,
+            "highlight_max_chars": 5,
+        },
+    )
+
+    highlights = smart_packaging_module._build_highlight_captions(
+        [
+            {"start": 0, "end": 1_000_000, "text": "铁锈红的一个包身", "highlights": ["铁锈红", "包身"]},
+            {"start": 1_000_000, "end": 2_000_000, "text": "整体质感很好", "highlights": ["质感"]},
+            {"start": 2_000_000, "end": 3_000_000, "text": "压纹设计", "highlights": ["压纹"]},
+            {"start": 3_000_000, "end": 4_000_000, "text": "整体做工不错", "highlights": ["做工"]},
+        ],
+        req,
+        smart_packaging_module.random.Random(1),
+    )
+
+    assert [item["text"] for item in highlights] == ["铁锈红", "包身", "压纹"]
+    assert {item["_source_caption_index"] for item in highlights} == {0, 2}
+
+
+def test_smart_packaging_allows_high_priority_terms_during_caption_cooldown():
+    req = SmartPackagingRequest(
+        videos=[{"video_url": "https://assets.example.com/product.mp4", "duration": 6_000_000}],
+        caption={
+            "enabled": True,
+            "source": "manual",
+            "highlight_max_count": 6,
+            "highlight_max_chars": 5,
+        },
+    )
+
+    highlights = smart_packaging_module._build_highlight_captions(
+        [
+            {"start": 0, "end": 1_000_000, "text": "铁锈红的一个包身", "highlights": ["铁锈红", "包身"]},
+            {"start": 1_000_000, "end": 2_000_000, "text": "格兰芬多宝剑", "highlights": ["格兰芬多", "宝剑", "质感"]},
+            {"start": 2_000_000, "end": 3_000_000, "text": "压纹设计", "highlights": ["压纹"]},
+        ],
+        req,
+        smart_packaging_module.random.Random(1),
+    )
+
+    assert [item["text"] for item in highlights] == ["铁锈红", "包身", "格兰芬多", "宝剑", "压纹"]
+    assert {item["_source_caption_index"] for item in highlights} == {0, 1, 2}
+
+
+def test_smart_packaging_uses_later_caption_when_cooldown_caption_has_no_highlight():
+    req = SmartPackagingRequest(
+        videos=[{"video_url": "https://assets.example.com/product.mp4", "duration": 6_000_000}],
+        caption={
+            "enabled": True,
+            "source": "manual",
+            "highlight_max_count": 6,
+            "highlight_max_chars": 5,
+        },
+    )
+
+    highlights = smart_packaging_module._build_highlight_captions(
+        [
+            {"start": 0, "end": 1_000_000, "text": "铁锈红的一个包身", "highlights": ["铁锈红"]},
+            {"start": 1_000_000, "end": 2_000_000, "text": "整体质感很好", "highlights": ["质感"]},
+            {"start": 2_000_000, "end": 3_000_000, "text": "然后我们继续看"},
+            {"start": 3_000_000, "end": 4_000_000, "text": "拉链隔层", "highlights": ["拉链"]},
+        ],
+        req,
+        smart_packaging_module.random.Random(1),
+    )
+
+    assert [item["text"] for item in highlights] == ["铁锈红", "拉链"]
+    assert {item["_source_caption_index"] for item in highlights} == {0, 3}
 
 
 def test_smart_packaging_applies_highlight_terms_to_plain_caption_keywords():
@@ -665,6 +882,69 @@ def test_smart_packaging_applies_highlight_terms_to_plain_caption_keywords():
     assert styled[0]["keyword_font_size"] == 12
 
 
+def test_plain_caption_keywords_are_not_filtered_by_template_cooldown():
+    req = SmartPackagingRequest(
+        videos=[{"video_url": "https://assets.example.com/product.mp4", "duration": 3_000_000}],
+        caption={
+            "enabled": True,
+            "source": "manual",
+            "keyword_color": "#ffff00",
+            "highlight_max_count": 6,
+            "highlight_max_chars": 5,
+        },
+    )
+    captions = [
+        {"start": 0, "end": 1_000_000, "text": "铁锈红的一个包身", "highlights": ["铁锈红"]},
+        {"start": 1_000_000, "end": 2_000_000, "text": "整体质感很好", "highlights": ["质感"]},
+    ]
+
+    template_highlights = smart_packaging_module._build_highlight_captions(
+        captions,
+        req,
+        smart_packaging_module.random.Random(1),
+    )
+    keyword_highlights = smart_packaging_module._build_plain_caption_keyword_highlights(captions, req)
+    styled = smart_packaging_module._apply_highlight_keywords_to_plain_captions(
+        captions,
+        keyword_highlights,
+        req,
+    )
+
+    assert [item["text"] for item in template_highlights] == ["铁锈红"]
+    assert styled[0]["keyword"] == "铁锈红"
+    assert styled[1]["keyword"] == "质感"
+    assert styled[1]["keyword_color"] == "#ffff00"
+
+
+def test_plain_caption_keywords_keep_more_than_two_terms_per_caption():
+    req = SmartPackagingRequest(
+        videos=[{"video_url": "https://assets.example.com/product.mp4", "duration": 3_000_000}],
+        caption={
+            "enabled": True,
+            "source": "manual",
+            "keyword_color": "#ffff00",
+            "highlight_max_chars": 5,
+        },
+    )
+    captions = [
+        {
+            "start": 0,
+            "end": 1_000_000,
+            "text": "铁锈红包身压纹拉链",
+            "highlights": ["铁锈红", "包身", "压纹", "拉链"],
+        }
+    ]
+
+    keyword_highlights = smart_packaging_module._build_plain_caption_keyword_highlights(captions, req)
+    styled = smart_packaging_module._apply_highlight_keywords_to_plain_captions(
+        captions,
+        keyword_highlights,
+        req,
+    )
+
+    assert styled[0]["keyword"] == "铁锈红|包身|压纹|拉链"
+
+
 def test_smart_packaging_can_use_text_effect_highlight_mode():
     req = SmartPackagingRequest(
         videos=[{"video_url": "https://assets.example.com/product.mp4", "duration": 3_000_000}],
@@ -685,6 +965,7 @@ def test_smart_packaging_can_use_text_effect_highlight_mode():
     )
 
     assert highlights[0]["text_effect"] == "花字A"
+    assert highlights[0]["font_size"] == req.caption.highlight_font_size
 
 
 def test_smart_packaging_staggers_same_caption_highlights_by_text_position():
@@ -693,6 +974,7 @@ def test_smart_packaging_staggers_same_caption_highlights_by_text_position():
         caption={
             "enabled": True,
             "source": "manual",
+            "highlight_style_mode": "effect",
             "text_effects": ["花字A"],
             "highlight_max_count": 3,
             "highlight_max_chars": 5,
@@ -708,7 +990,7 @@ def test_smart_packaging_staggers_same_caption_highlights_by_text_position():
     assert [item["text"] for item in highlights] == ["铁锈红", "包身"]
     assert highlights[0]["start"] == 1_000_000
     assert highlights[1]["start"] > highlights[0]["start"]
-    assert highlights[1]["end"] <= 2_000_000
+    assert highlights[1]["end"] <= 3_000_000
 
 
 def test_smart_packaging_keeps_llm_highlights_on_matching_split_caption():
@@ -786,6 +1068,7 @@ def test_smart_packaging_allows_highlights_from_same_caption_to_overlap():
         caption={
             "enabled": True,
             "source": "manual",
+            "highlight_style_mode": "effect",
             "text_effects": ["花字A"],
             "highlight_max_count": 3,
             "highlight_max_chars": 5,
@@ -819,6 +1102,28 @@ def test_smart_packaging_allows_highlights_from_same_caption_to_overlap():
     )
     assert not smart_packaging_module._bounds_overlap(first_bounds, second_bounds)
     assert all(1_000_000 <= item["start"] < item["end"] <= 2_500_000 for item in highlights)
+
+
+def test_highlight_positions_prefer_upper_left_or_right_slots():
+    req = SmartPackagingRequest(
+        videos=[{"video_url": "https://assets.example.com/product.mp4", "duration": 3_000_000}],
+        caption={
+            "highlight_transform_x_min": -782,
+            "highlight_transform_x_max": 780,
+            "highlight_transform_y_min": 520,
+            "highlight_transform_y_max": 820,
+        },
+    )
+    randomizer = smart_packaging_module.random.Random(1)
+
+    positions = [
+        smart_packaging_module._spread_highlight_position(index, req, randomizer, text="宝剑")
+        for index in range(4)
+    ]
+
+    assert all((-782 <= x <= -600) or (600 <= x <= 780) for x, _ in positions)
+    assert all(520 <= y <= 820 for _, y in positions)
+    assert all(y >= 540 for _, y in positions)
 
 
 def test_smart_packaging_splits_overlapping_highlights_into_multiple_tracks():
@@ -900,6 +1205,84 @@ def test_text_template_selection_avoids_reuse_when_enough_entries():
     assert len({entry["material_id"] for entry in selected_entries}) == 3
 
 
+def test_text_template_loader_excludes_unwanted_template_names(monkeypatch, tmp_path):
+    key_value_path = tmp_path / "key_value.json"
+    key_value_path.write_text(
+        json.dumps(
+            {
+                "mat-good": {
+                    "materialSubcategory": "text_template",
+                    "materialId": "mat-good",
+                    "materialName": "新品首发",
+                    "segmentId": "seg-good",
+                    "rank": 1,
+                },
+                "mat-bad": {
+                    "materialSubcategory": "text_template",
+                    "materialId": "mat-bad",
+                    "materialName": "超值好物",
+                    "segmentId": "seg-bad",
+                    "rank": 2,
+                },
+                "mat-style": {
+                    "materialSubcategory": "text_template",
+                    "materialId": "mat-style",
+                    "materialName": "简约盐系穿搭",
+                    "segmentId": "seg-style",
+                    "rank": 3,
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        smart_packaging_module,
+        "_load_text_template_cache_info",
+        lambda material_id, cache_dir: {"package_dir": "", "effect_ids": [], "default_texts": []},
+    )
+
+    entries = smart_packaging_module._load_jianying_text_template_entries(str(tmp_path), str(tmp_path))
+
+    assert [entry["name"] for entry in entries] == ["新品首发"]
+
+
+def test_text_template_loader_dedupes_same_template_name_and_package(monkeypatch, tmp_path):
+    key_value_path = tmp_path / "key_value.json"
+    key_value_path.write_text(
+        json.dumps(
+            {
+                "mat-a": {
+                    "materialSubcategory": "text_template",
+                    "materialId": "mat-a",
+                    "materialName": "新品首发",
+                    "segmentId": "seg-a",
+                    "rank": 2,
+                },
+                "mat-b": {
+                    "materialSubcategory": "text_template",
+                    "materialId": "mat-b",
+                    "materialName": "新品首发",
+                    "segmentId": "seg-b",
+                    "rank": 1,
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        smart_packaging_module,
+        "_load_text_template_cache_info",
+        lambda material_id, cache_dir: {"package_dir": "/tmp/template-a", "effect_ids": ["effect-a"], "default_texts": []},
+    )
+
+    entries = smart_packaging_module._load_jianying_text_template_entries(str(tmp_path), str(tmp_path))
+
+    assert len(entries) == 1
+    assert entries[0]["material_id"] == "mat-b"
+
+
 def test_text_template_selection_reuses_only_after_pool_exhausted():
     entries = [
         {"name": "模板A", "material_id": "mat-a", "effect_id": "effect-a", "package_dir": "/tmp/a"},
@@ -955,6 +1338,165 @@ def test_text_template_anchor_keeps_position_when_already_visible():
     adjusted = smart_packaging_module._shift_highlight_to_keep_template_visible(script, highlight, children)
 
     assert adjusted is highlight
+
+
+def test_text_template_aligns_transform_x_to_requested_side_ranges():
+    script = type("Script", (), {"width": 1080, "height": 1920})()
+    children = [
+        {
+            "type": "text",
+            "original_size": [600, 180],
+            "position": [0, 0, 0],
+            "scale": [1, 1, 1],
+        }
+    ]
+
+    left = smart_packaging_module._align_highlight_template_to_side(
+        script,
+        {"transform_x": -300, "transform_y": 700, "text": "宝剑", "font_size": 28},
+        children,
+    )
+    right = smart_packaging_module._align_highlight_template_to_side(
+        script,
+        {"transform_x": 300, "transform_y": 700, "text": "宝剑", "font_size": 28},
+        children,
+    )
+    assert -782.0 <= left["transform_x"] <= -600.0
+    assert 600.0 <= right["transform_x"] <= 780.0
+    assert script.height / 2 - script.height * 0.70 <= left["transform_y"] <= script.height / 2
+    assert script.height / 2 - script.height * 0.70 <= right["transform_y"] <= script.height / 2
+
+
+def test_text_template_transform_x_is_clamped_to_requested_side_ranges():
+    script = type("Script", (), {"width": 1080, "height": 1920})()
+    children = [
+        {
+            "type": "text",
+            "original_size": [600, 180],
+            "position": [0, 0, 0],
+            "scale": [1, 1, 1],
+        }
+    ]
+
+    adjusted = smart_packaging_module._shift_highlight_template_inside_top_regions(
+        script,
+        {"transform_x": 200, "transform_y": -400, "text": "宝剑", "font_size": 28},
+        children,
+    )
+    assert 600.0 <= adjusted["transform_x"] <= 780.0
+    assert script.height / 2 - script.height * 0.70 <= adjusted["transform_y"] <= script.height / 2
+
+
+def test_text_template_auto_scale_uses_stable_random_range():
+    randomizer = smart_packaging_module.random.Random(1)
+    highlight = {"text": "宝剑", "font_size": 17}
+    children = [
+        {
+            "type": "text",
+            "position": [220, 120, 0],
+            "scale": [1.6, 1.6, 1],
+            "original_size": [900, 420],
+        },
+        {
+            "type": "sticker",
+            "position": [-180, -80, 0],
+            "scale": [1.2, 1.2, 1],
+            "original_size": [520, 360],
+        },
+    ]
+
+    scale = smart_packaging_module._auto_text_template_scale(randomizer, highlight)
+    scaled = smart_packaging_module._scaled_template_children(children, scale)
+
+    assert smart_packaging_module.TEXT_TEMPLATE_AUTO_SCALE_MIN <= scale
+    assert scale <= smart_packaging_module.TEXT_TEMPLATE_AUTO_SCALE_MAX
+    assert scaled[0]["scale"][0] == pytest.approx(scale)
+    assert scaled[1]["scale"][0] == pytest.approx(children[1]["scale"][0] * scale / children[0]["scale"][0])
+    assert abs(scaled[0]["position"][0]) == pytest.approx(abs(children[0]["position"][0] * scale / 1.6))
+
+
+def test_text_template_scaling_keeps_small_sticker_relative_size():
+    children = [
+        {"type": "text", "position": [0, 0, 0], "scale": [2.0, 2.0, 1], "original_size": [500, 160]},
+        {"type": "sticker", "position": [100, 30, 0], "scale": [0.08, 0.08, 1], "original_size": [200, 200]},
+    ]
+
+    scaled = smart_packaging_module._scaled_template_children(children, 1.0)
+
+    assert scaled[0]["scale"][0] == pytest.approx(1.0)
+    assert scaled[1]["scale"][0] == pytest.approx(0.04)
+    assert scaled[1]["position"][0] == pytest.approx(50)
+
+
+def test_text_template_highlight_keeps_only_primary_text_layer():
+    children = [
+        {"type": "text", "order_in_layer": 1, "scale": [0.8, 0.8, 1], "original_size": [300, 120]},
+        {"type": "text", "order_in_layer": 2, "scale": [1.4, 1.4, 1], "original_size": [600, 180]},
+        {"type": "sticker", "order_in_layer": 3, "scale": [0.2, 0.2, 1], "original_size": [120, 120]},
+    ]
+
+    visible = smart_packaging_module._template_visible_children_for_highlight(children)
+
+    assert [item["type"] for item in visible] == ["text", "sticker"]
+    assert visible[0]["original_size"] == [600, 180]
+
+
+def test_text_template_2_layers_keep_effects_and_animations(monkeypatch, tmp_path):
+    template_entries = smart_packaging_module._load_jianying_text_template_entries(
+        smart_packaging_module.DEFAULT_JIANYING_TEXT_TEMPLATE_DRAFT_DIR,
+    )
+    template_entry = next(
+        (
+            entry for entry in template_entries
+            if entry.get("package_dir") and entry.get("effect_ids") and entry.get("name") == "好用单品"
+        ),
+        None,
+    )
+    if not template_entry:
+        pytest.skip("文字模板2 cache is not available on this machine")
+
+    draft_dir = tmp_path / "drafts"
+    monkeypatch.setattr("config.DRAFT_DIR", str(draft_dir))
+
+    draft_url = smart_packaging_module.create_draft(1080, 1920)
+    draft_id = draft_url.split("draft_id=")[-1]
+    script = smart_packaging_module.DRAFT_CACHE[draft_id]
+    segment_ids = smart_packaging_module._add_text_template_layers_to_draft(
+        draft_url,
+        {
+            "text": "宝剑",
+            "start": 1_000_000,
+            "end": 3_800_000,
+            "_source_caption_index": 0,
+            "_source_caption_end": 3_800_000,
+            "font_size": 17,
+            "transform_x": -700,
+            "transform_y": 700,
+        },
+        template_entry,
+    )
+
+    assert len(segment_ids) >= 2
+    assert script.materials.animations
+    assert any(animation.animations for animation in script.materials.animations)
+    assert any(
+        getattr(effect, "effect_id", "") in template_entry["effect_ids"]
+        for effect in script.materials.filters
+    )
+    assert any(track.track_type == smart_packaging_module.draft.TrackType.sticker for track in script.tracks.values())
+
+
+def test_template_highlight_range_extends_around_source_caption():
+    start, end = smart_packaging_module._timed_highlight_range(
+        {"start": 1_000_000, "end": 1_500_000, "text": "铁锈红包身"},
+        "包身",
+        prefer_template_duration=True,
+        video_duration=4_000_000,
+    )
+
+    assert start < 1_500_000
+    assert end > 1_500_000
+    assert end - start >= smart_packaging_module.TEXT_TEMPLATE_MIN_DISPLAY_DURATION
 
 
 def test_smart_packaging_prefers_jianying_cached_sound_file(monkeypatch, tmp_path):
@@ -1068,6 +1610,78 @@ def test_smart_packaging_keeps_one_sound_for_same_caption_highlights(monkeypatch
     assert audio_infos[0]["end"] == 1_360_000
 
 
+def test_smart_packaging_avoids_reusing_highlight_sounds_when_pool_is_enough(monkeypatch, tmp_path):
+    sound_paths = {}
+    for name in ["啵1", "唰", "叮"]:
+        path = tmp_path / f"{name}.mp3"
+        path.write_bytes(b"fake mp3")
+        sound_paths[name] = str(path)
+    monkeypatch.setattr(smart_packaging_module, "_build_jianying_sound_path_map", lambda req: sound_paths)
+    monkeypatch.setattr(smart_packaging_module, "_audio_duration_or_default", lambda path, default_duration: 200_000)
+
+    req = SmartPackagingRequest(
+        videos=[{"video_url": "https://assets.example.com/product.mp4", "duration": 4_000_000}],
+        sound_effects={
+            "enabled": True,
+            "count": 3,
+            "duration": 200_000,
+            "auto_for_highlights": True,
+            "highlight_sound_effects": ["啵1", "唰", "叮"],
+            "use_jianying_cache": True,
+        },
+    )
+
+    audio_infos = smart_packaging_module._build_highlight_audio_infos(
+        [
+            {"start": 0, "end": 600_000, "text": "包包"},
+            {"start": 800_000, "end": 1_400_000, "text": "好物"},
+            {"start": 1_600_000, "end": 2_200_000, "text": "喜欢"},
+        ],
+        req,
+        smart_packaging_module.random.Random(1),
+    )
+
+    used_paths = [item["local_audio_path"] for item in audio_infos]
+    assert len(used_paths) == 3
+    assert len(set(used_paths)) == 3
+
+
+def test_smart_packaging_reuses_highlight_sounds_after_pool_is_exhausted(monkeypatch, tmp_path):
+    sound_paths = {}
+    for name in ["啵1", "唰"]:
+        path = tmp_path / f"{name}.mp3"
+        path.write_bytes(b"fake mp3")
+        sound_paths[name] = str(path)
+    monkeypatch.setattr(smart_packaging_module, "_build_jianying_sound_path_map", lambda req: sound_paths)
+    monkeypatch.setattr(smart_packaging_module, "_audio_duration_or_default", lambda path, default_duration: 200_000)
+
+    req = SmartPackagingRequest(
+        videos=[{"video_url": "https://assets.example.com/product.mp4", "duration": 4_000_000}],
+        sound_effects={
+            "enabled": True,
+            "count": 3,
+            "duration": 200_000,
+            "auto_for_highlights": True,
+            "highlight_sound_effects": ["啵1", "唰"],
+            "use_jianying_cache": True,
+        },
+    )
+
+    audio_infos = smart_packaging_module._build_highlight_audio_infos(
+        [
+            {"start": 0, "end": 600_000, "text": "包包"},
+            {"start": 800_000, "end": 1_400_000, "text": "好物"},
+            {"start": 1_600_000, "end": 2_200_000, "text": "喜欢"},
+        ],
+        req,
+        smart_packaging_module.random.Random(1),
+    )
+
+    used_paths = [item["local_audio_path"] for item in audio_infos]
+    assert len(used_paths) == 3
+    assert len(set(used_paths)) == 2
+
+
 def test_smart_packaging_caps_cached_sound_to_highlight_duration(monkeypatch, tmp_path):
     cached_audio = tmp_path / "magic.mp3"
     cached_audio.write_bytes(b"fake mp3")
@@ -1160,6 +1774,52 @@ def test_smart_packaging_sound_effects_use_preview_file_names(monkeypatch, tmp_p
 
     assert sound_path_map["咻"] == str(first_audio)
     assert sound_path_map["爆炸声"] == str(second_audio)
+
+
+def test_smart_packaging_maps_jianying_sound_by_material_id_hash(monkeypatch, tmp_path):
+    cache_dir = tmp_path / "music"
+    cache_dir.mkdir()
+    correct_audio = cache_dir / "correct.mp3"
+    wrong_audio = cache_dir / "wrong.mp3"
+    correct_audio.write_bytes(b"correct mp3")
+    wrong_audio.write_bytes(b"wrong mp3")
+    material_id = "6896679333541285133"
+    (cache_dir / "downLoadcfg").write_text(
+        json.dumps(
+            {
+                "list": [
+                    {"date": "1", "hex": "not-this-material", "path": wrong_audio.name},
+                    {
+                        "date": "2",
+                        "hex": hashlib.md5(material_id.encode("utf-8")).hexdigest(),
+                        "path": correct_audio.name,
+                    },
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    empty_preview_dir = tmp_path / "empty_previews"
+    empty_preview_dir.mkdir()
+    monkeypatch.setattr(smart_packaging_module, "SOUND_EFFECT_PREVIEW_DIR", str(empty_preview_dir))
+    monkeypatch.setattr(
+        smart_packaging_module,
+        "_load_jianying_sound_entries",
+        lambda sound_draft_dir=None: [{"name": "滴，提示音", "material_id": material_id}],
+    )
+
+    req = SmartPackagingRequest(
+        videos=[{"video_url": "https://assets.example.com/product.mp4", "duration": 3_000_000}],
+        sound_effects={
+            "jianying_sound_draft_dir": "/tmp/sound-draft",
+            "jianying_cache_dir": str(cache_dir),
+        },
+    )
+
+    sound_path_map = smart_packaging_module._build_jianying_sound_path_map(req)
+
+    assert sound_path_map["滴，提示音"] == str(correct_audio)
 
 
 def test_smart_packaging_does_not_use_unmatched_cached_sound(monkeypatch, tmp_path):
@@ -1308,15 +1968,24 @@ def test_split_long_text_keeps_livestream_phrase():
     assert pieces == ["今天我们可以", "来直播间看一看"]
 
 
+def test_split_long_text_keeps_spell_phrase():
+    pieces = smart_packaging_module._split_long_text("而且它是对应到一个咒语", 10)
+    assert pieces == ["而且它是", "对应到一个咒语"]
+
+
 def test_smart_packaging_default_sticker_count_and_sound_pool():
     req = SmartPackagingRequest(videos=[{"video_url": "https://assets.example.com/video.mp4"}])
     assert req.caption.font_size == 12
     assert req.caption.highlight_font_size == 28
-    assert req.stickers.count == 6
+    assert req.stickers.count == 0
     assert smart_packaging_module.DEFAULT_HIGHLIGHT_SOUND_EFFECTS == (
-        "叮（金属声）",
-        "Magic reveal",
-        "嗖嗖",
-        "闪亮登场音效",
-        "卡通弹跳音",
+        "滴，提示音",
+        "叮叮叮",
+        "哇呜",
+        "啵1",
+        "唰",
+        "Ding，可爱提示音",
+        "魔法音效",
+        "正确",
+        "叮",
     )

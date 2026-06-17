@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 import tempfile
 from typing import Any, Dict, List
@@ -15,6 +16,22 @@ from src.utils.logger import logger
 ASR_UPLOAD_FILENAME = "audio.mp3"
 
 
+def _normalize_api_key(api_key: str | None) -> str:
+    if not api_key:
+        return ""
+    cleaned = str(api_key).strip().replace("\u3000", " ")
+    if cleaned.lower().startswith("authorization:"):
+        cleaned = cleaned.split(":", 1)[1].strip()
+    if cleaned.lower().startswith("bearer "):
+        cleaned = cleaned[7:].strip()
+    cleaned = re.sub(r"\s+", "", cleaned)
+    try:
+        cleaned.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise ValueError("ASR API Key 只能包含英文/数字/符号，请检查是否粘入了中文、全角空格或说明文字") from exc
+    return cleaned
+
+
 def _raise_for_status_with_body(response: requests.Response) -> None:
     try:
         response.raise_for_status()
@@ -24,9 +41,10 @@ def _raise_for_status_with_body(response: requests.Response) -> None:
 
 
 def _auth_headers(asr: SmartPackagingAsrConfig) -> Dict[str, str]:
-    if not asr.api_key:
+    api_key = _normalize_api_key(asr.api_key)
+    if not api_key:
         return {}
-    return {"Authorization": f"Bearer {asr.api_key}"}
+    return {"Authorization": f"Bearer {api_key}"}
 
 
 def _time_to_microseconds(value: Any) -> int:
