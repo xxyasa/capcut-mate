@@ -81,11 +81,18 @@ jobs:
         working-directory: desktop-client
         run: npm run build-win-green
 
-      - name: Upload artifacts
+      - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: capcut-mate-windows
-          path: |
-            desktop-client/dist/capcut-mate-windows-x64-installer.exe
-            desktop-client/dist/capcut-mate-windows-x64-green.zip
+          name: capcut-mate-windows-installer
+          path: desktop-client/dist/capcut-mate-windows-x64-installer.exe
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload green zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: capcut-mate-windows-green
+          path: desktop-client/dist/capcut-mate-windows-x64-green.zip
+          compression-level: 0
           if-no-files-found: error
