@@ -39,6 +39,14 @@ module.exports = {
     {
       from: "assets/",
       to: "assets/"
+    },
+    {
+      from: "../dist/capcut-mate-backend",
+      to: "backend"
+    },
+    {
+      from: "../smart-assets",
+      to: "smart-assets"
     }
   ]
 };

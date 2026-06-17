@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import math
 import os
@@ -99,7 +100,7 @@ HIGHLIGHT_WEAK_PREFIXES = (
 
 HIGHLIGHT_BAD_SUBSTRINGS = (
     "我们", "你们", "他们", "大家", "这边", "那边", "可以", "做了", "还是", "还做",
-    "这一款", "这一个", "这款", "一款", "这个", "那个", "喜欢到",
+    "这一款", "这一个", "这款", "一款", "这个", "那个", "喜欢到", "有到",
 )
 
 STICKER_KEYWORD_RULES = (
@@ -201,6 +202,29 @@ PRODUCT_HIGHLIGHT_TERMS = (
 COLOR_TERMS = ("橘黄色", "橙黄色", "铁锈红", "红色", "黄色", "蓝色", "白色", "黑色", "金色", "银色", "棕色")
 IMPACT_TERMS = ("勇气", "宝剑", "魔杖", "格兰芬多", "斯莱特林", "赫奇帕奇", "拉文克劳")
 DETAIL_TERMS = ("压纹", "拉链", "隔层", "包身", "包包", "学院", "设计")
+HIGH_PRIORITY_HIGHLIGHT_TERMS = (
+    "格兰芬多",
+    "斯莱特林",
+    "赫奇帕奇",
+    "拉文克劳",
+    "橘黄色",
+    "橙黄色",
+    "铁锈红",
+    "红色",
+    "黄色",
+    "蓝色",
+    "白色",
+    "黑色",
+    "金色",
+    "银色",
+    "棕色",
+    "勇气",
+    "宝剑",
+    "魔杖",
+    "压纹",
+    "拉链",
+    "隔层",
+)
 HIGHLIGHT_TEXT_TEMPLATES = (
     {
         "text_color": "#fff2c7",
@@ -224,11 +248,15 @@ HIGHLIGHT_TEXT_TEMPLATES = (
     },
 )
 DEFAULT_HIGHLIGHT_SOUND_EFFECTS = (
-    "叮（金属声）",
-    "Magic reveal",
-    "嗖嗖",
-    "闪亮登场音效",
-    "卡通弹跳音",
+    "滴，提示音",
+    "叮叮叮",
+    "哇呜",
+    "啵1",
+    "唰",
+    "Ding，可爱提示音",
+    "魔法音效",
+    "正确",
+    "叮",
 )
 TEXT_TEMPLATE_SAFE_MARGIN_X = 54.0
 TEXT_TEMPLATE_SAFE_MARGIN_Y = 96.0
@@ -243,7 +271,11 @@ HIGHLIGHT_SOUND_EFFECT_TONES = {
     "Ding，可爱提示音": "shine",
     "叮铃~魔法音效": "magic",
     "叮铃～魔法音效": "magic",
+    "魔法音效": "magic",
     "闪亮登场音效": "shine",
+    "正确": "shine",
+    "叮": "shine",
+    "哇呜": "pop",
     "砰，拳击声": "impact",
     "匕首": "impact",
     "呵呵": "laugh",
@@ -270,26 +302,34 @@ HIGHLIGHT_TONE_ALIASES = {
     "疑问": "question",
     "啊?": "question",
 }
-DEFAULT_JIANYING_MUSIC_CACHE_DIR = os.path.expanduser(
-    "~/Movies/JianyingPro/User Data/Cache/music"
+DEFAULT_JIANYING_MUSIC_CACHE_DIR = os.getenv(
+    "JIANYING_MUSIC_CACHE_DIR",
+    os.path.expanduser("~/Movies/JianyingPro/User Data/Cache/music"),
 )
-DEFAULT_JIANYING_SOUND_DRAFT_DIR = os.path.expanduser(
-    "~/Movies/JianyingPro/User Data/Projects/com.lveditor.draft/音效"
+DEFAULT_JIANYING_SOUND_DRAFT_DIR = os.getenv(
+    "JIANYING_SOUND_DRAFT_DIR",
+    os.path.expanduser("~/Movies/JianyingPro/User Data/Projects/com.lveditor.draft/音效库2"),
 )
 DEFAULT_JIANYING_PROJECTS_DIR = os.path.expanduser(
     "~/Movies/JianyingPro/User Data/Projects/com.lveditor.draft"
 )
-DEFAULT_JIANYING_TEXT_TEMPLATE_DRAFT_DIR = os.path.expanduser(
-    "~/Movies/JianyingPro/User Data/Projects/com.lveditor.draft/文字模板-电商模板"
+DEFAULT_JIANYING_TEXT_TEMPLATE_DRAFT_DIR = os.getenv(
+    "JIANYING_TEXT_TEMPLATE_DRAFT_DIR",
+    os.path.expanduser("~/Movies/JianyingPro/User Data/Projects/com.lveditor.draft/文字模板2"),
 )
-DEFAULT_JIANYING_ARTIST_EFFECT_CACHE_DIR = os.path.expanduser(
-    "~/Movies/JianyingPro/User Data/Cache/artistEffect"
+DEFAULT_JIANYING_ARTIST_EFFECT_CACHE_DIR = os.getenv(
+    "JIANYING_ARTIST_EFFECT_CACHE_DIR",
+    os.path.expanduser("~/Movies/JianyingPro/User Data/Cache/artistEffect"),
 )
 TEXT_TEMPLATE_BASE_WIDTH = 1080.0
 TEXT_TEMPLATE_BASE_HEIGHT = 1920.0
-EXCLUDED_JIANYING_TEXT_TEMPLATE_KEYWORDS = ("疯狂安利", "实用满分")
+EXCLUDED_JIANYING_TEXT_TEMPLATE_KEYWORDS = ("疯狂安利", "实用满分", "超值好物", "简约盐系穿搭")
 TEXT_TEMPLATE_MIN_DISPLAY_DURATION = 2_400_000
 TEXT_TEMPLATE_MAX_DISPLAY_DURATION = 3_200_000
+TEXT_TEMPLATE_AUTO_SCALE_MIN = 0.7
+TEXT_TEMPLATE_AUTO_SCALE_MAX = 1.0
+HIGHLIGHT_TIME_LEAD = 260_000
+HIGHLIGHT_TIME_TAIL = 260_000
 SUPPORTED_JIANYING_AUDIO_SUFFIXES = {".mp3", ".wav", ".m4a", ".aac"}
 SOUND_EFFECT_PREVIEW_DIR = os.path.join(config.PROJECT_ROOT, "output", "sound_effect_previews")
 
@@ -373,6 +413,7 @@ def _split_long_text(text: str, max_chars: int) -> List[str]:
         "因为",
         "就是",
         "可以",
+        "对应到",
         "这里",
         "下方",
         "上方",
@@ -396,9 +437,14 @@ def _split_long_text(text: str, max_chars: int) -> List[str]:
         "看一看",
         "瞧一瞧",
         "了解一下",
+        "咒语",
+        "一个咒语",
+        "对应到一个咒语",
     )
     natural_right_starts = (
         "喜欢",
+        "对应到",
+        "对应到一个",
         "直播间",
         "来直播间",
         "看一看",
@@ -468,7 +514,7 @@ def _split_long_text(text: str, max_chars: int) -> List[str]:
         if _visible_char_count(text_value) <= hard_limit:
             return None
 
-        preferred_start = max(2, soft_limit - 4)
+        preferred_start = max(2, soft_limit - 6)
         preferred_end = min(len(text_value) - 1, hard_limit)
         candidates = list(range(preferred_start, preferred_end + 1))
         if not candidates:
@@ -494,11 +540,15 @@ def _split_long_text(text: str, max_chars: int) -> List[str]:
     return [item for item in chunks if item]
 
 
-def _split_caption_by_max_chars(caption: dict, max_chars: int) -> List[dict]:
+def _split_caption_by_max_chars(caption: dict, max_chars: int, source_index: int | None = None) -> List[dict]:
     text = str(caption.get("text", "")).strip()
     pieces = _split_long_text(text, max_chars)
+    original_source_index = caption.get("_source_caption_index", source_index)
     if len(pieces) <= 1:
-        return [caption]
+        next_caption = dict(caption)
+        if original_source_index is not None:
+            next_caption["_source_caption_index"] = original_source_index
+        return [next_caption]
 
     start = int(caption["start"])
     end = int(caption["end"])
@@ -518,6 +568,8 @@ def _split_caption_by_max_chars(caption: dict, max_chars: int) -> List[dict]:
         next_caption["start"] = cursor
         next_caption["end"] = piece_end
         next_caption["text"] = piece
+        if original_source_index is not None:
+            next_caption["_source_caption_index"] = original_source_index
         if caption.get("highlights"):
             piece_highlights = [
                 highlight
@@ -538,8 +590,8 @@ def _split_caption_by_max_chars(caption: dict, max_chars: int) -> List[dict]:
 
 def _split_captions_by_max_chars(captions: List[dict], max_chars: int) -> List[dict]:
     result: List[dict] = []
-    for caption in captions:
-        result.extend(_split_caption_by_max_chars(caption, max_chars))
+    for index, caption in enumerate(captions):
+        result.extend(_split_caption_by_max_chars(caption, max_chars, index))
     return result
 
 
@@ -689,6 +741,12 @@ def _is_valid_highlight_term(text: str) -> bool:
         return False
     if cleaned.count("的") >= 2:
         return False
+    if re.search(r"(有|到|放|看|来|去|做|带|是|在|把|给|让|会|能|要|就)", cleaned):
+        known_terms = set(PRODUCT_HIGHLIGHT_TERMS + COLOR_TERMS + IMPACT_TERMS + DETAIL_TERMS + HIGHLIGHT_KEYWORDS)
+        if cleaned not in known_terms:
+            return False
+    if cleaned.endswith(("有", "到", "放", "看", "来", "去", "做", "带", "是", "在", "把", "给", "让")):
+        return False
     return True
 
 
@@ -759,6 +817,10 @@ def _highlight_term_score(term: str, caption_text: str, caption_index: int) -> i
     return score
 
 
+def _is_high_priority_highlight(term: str, score: int) -> bool:
+    return term in HIGH_PRIORITY_HIGHLIGHT_TERMS
+
+
 def _highlight_score(text: str, index: int) -> int:
     cleaned = _normalize_highlight_text(text, 30)
     if not cleaned or cleaned in HIGHLIGHT_STOPWORDS:
@@ -807,12 +869,6 @@ def _extract_terms_from_text(text: str, max_chars: int, caption_index: int) -> L
             continue
         if _is_valid_highlight_term(term) and term not in HIGHLIGHT_STOPWORDS:
             candidates.append((_highlight_term_score(term, cleaned, caption_index) - 1, term))
-
-    if not candidates:
-        fallback = _normalize_highlight_text(cleaned, max_chars)
-        normalized_fallback = _normalize_highlight_candidate(fallback, max_chars)
-        if normalized_fallback and normalized_fallback not in HIGHLIGHT_STOPWORDS:
-            candidates.append((_highlight_score(normalized_fallback, caption_index), normalized_fallback))
 
     return _dedupe_highlight_candidates(candidates, cleaned, max_chars)
 
@@ -924,6 +980,96 @@ def _template_child_bounds(child: dict, highlight: dict) -> tuple[float, float, 
     return center_x - half_width, center_y - half_height, center_x + half_width, center_y + half_height
 
 
+def _estimate_template_height(children: Sequence[dict], highlight: dict) -> float:
+    bounds = _merge_bounds([_template_child_bounds(child, highlight) for child in children])
+    if not bounds:
+        return 0.0
+    return max(1.0, bounds[3] - bounds[1])
+
+
+def _auto_text_template_scale(randomizer: random.Random, highlight: dict) -> float:
+    configured = highlight.get("text_template_scale")
+    if configured is not None:
+        try:
+            return max(0.1, min(2.0, float(configured)))
+        except (TypeError, ValueError):
+            pass
+    return round(randomizer.uniform(TEXT_TEMPLATE_AUTO_SCALE_MIN, TEXT_TEMPLATE_AUTO_SCALE_MAX), 3)
+
+
+def _template_primary_text_scale(children: Sequence[dict]) -> tuple[float, float]:
+    text_scales: List[tuple[float, float]] = []
+    for child in children:
+        if child.get("type") != "text":
+            continue
+        scale = child.get("scale") if isinstance(child.get("scale"), list) else None
+        if not scale:
+            continue
+        try:
+            scale_x = abs(float(scale[0] if scale else 1.0)) or 1.0
+            scale_y = abs(float(scale[1] if len(scale) > 1 else scale[0])) or scale_x
+        except (TypeError, ValueError):
+            continue
+        text_scales.append((scale_x, scale_y))
+    if not text_scales:
+        return 1.0, 1.0
+    return max(text_scales, key=lambda item: item[0] * item[1])
+
+
+def _template_primary_text_child_index(children: Sequence[dict]) -> int | None:
+    candidates: List[tuple[float, int]] = []
+    for index, child in enumerate(children):
+        if child.get("type") != "text":
+            continue
+        original_size = child.get("original_size") if isinstance(child.get("original_size"), list) else [500, 160]
+        scale = child.get("scale") if isinstance(child.get("scale"), list) else [1, 1, 1]
+        try:
+            width = abs(float(original_size[0] if original_size else 500.0))
+            height = abs(float(original_size[1] if len(original_size) > 1 else 160.0))
+            scale_x = abs(float(scale[0] if scale else 1.0)) or 1.0
+            scale_y = abs(float(scale[1] if len(scale) > 1 else scale[0])) or scale_x
+        except (TypeError, ValueError):
+            width, height, scale_x, scale_y = 500.0, 160.0, 1.0, 1.0
+        order_bonus = max(0.0, 1000.0 - float(child.get("order_in_layer") or 0))
+        candidates.append((width * height * scale_x * scale_y + order_bonus, index))
+    if not candidates:
+        return None
+    return max(candidates)[1]
+
+
+def _template_visible_children_for_highlight(children: Sequence[dict]) -> List[dict]:
+    primary_text_index = _template_primary_text_child_index(children)
+    visible_children: List[dict] = []
+    for index, child in enumerate(children):
+        if child.get("type") == "text" and primary_text_index is not None and index != primary_text_index:
+            continue
+        visible_children.append(child)
+    return visible_children
+
+
+def _scaled_template_children(children: Sequence[dict], target_scale: float) -> List[dict]:
+    base_text_scale_x, base_text_scale_y = _template_primary_text_scale(children)
+    scale_factor_x = target_scale / base_text_scale_x
+    scale_factor_y = target_scale / base_text_scale_y
+    scaled_children: List[dict] = []
+    for child in children:
+        scaled = dict(child)
+        position = child.get("position") if isinstance(child.get("position"), list) else None
+        if position:
+            scaled["position"] = [
+                float(value) * (scale_factor_x if index == 0 else scale_factor_y) if index < 2 else value
+                for index, value in enumerate(position)
+            ]
+        scale = child.get("scale") if isinstance(child.get("scale"), list) else None
+        if scale:
+            scaled["scale"] = [
+                float(value) * (scale_factor_x if index == 0 else scale_factor_y) if index < 2 else value
+                for index, value in enumerate(scale)
+            ]
+        scaled_children.append(scaled)
+    return scaled_children
+
+
 def _merge_bounds(bounds_list: Sequence[tuple[float, float, float, float]]) -> tuple[float, float, float, float] | None:
     if not bounds_list:
         return None
@@ -964,6 +1110,60 @@ def _shift_highlight_to_keep_template_visible(script, highlight: dict, children:
     return adjusted
 
 
+def _align_highlight_template_to_side(script, highlight: dict, children: Sequence[dict]) -> dict:
+    current_x = float(highlight.get("transform_x", 0.0))
+    current_y = float(highlight.get("transform_y", 0.0))
+    top_y_max = script.height / 2
+    top_y_min = script.height / 2 - script.height * 0.70
+    side_seed = f"{highlight.get('_source_caption_index', '')}:{highlight.get('text', '')}:{current_x:.2f}:{current_y:.2f}"
+    randomizer = random.Random(side_seed)
+    target_x = randomizer.uniform(-782.0, -600.0) if current_x <= 0 else randomizer.uniform(600.0, 780.0)
+    target_y = randomizer.uniform(top_y_min, top_y_max)
+    if abs(target_x - current_x) < 1.0 and abs(target_y - current_y) < 1.0:
+        return highlight
+
+    adjusted = dict(highlight)
+    adjusted["transform_x"] = round(target_x, 2)
+    adjusted["transform_y"] = round(target_y, 2)
+    return adjusted
+
+
+def _shift_highlight_template_inside_top_regions(script, highlight: dict, children: Sequence[dict]) -> dict:
+    current_x = float(highlight.get("transform_x", 0.0))
+    current_y = float(highlight.get("transform_y", 0.0))
+    top_y_max = script.height / 2
+    top_y_min = script.height / 2 - script.height * 0.70
+    x_min, x_max = (-782.0, -600.0) if current_x <= 0 else (600.0, 780.0)
+    target_x = _clamp_position(current_x, x_min, x_max)
+    target_y = _clamp_position(current_y, top_y_min, top_y_max)
+    if abs(target_x - current_x) < 1.0 and abs(target_y - current_y) < 1.0:
+        return highlight
+
+    adjusted = dict(highlight)
+    adjusted["transform_x"] = round(target_x, 2)
+    adjusted["transform_y"] = round(target_y, 2)
+    return adjusted
+
+
+def _align_highlight_template_to_edge(script, highlight: dict, children: Sequence[dict]) -> dict:
+    bounds = _merge_bounds([_template_child_bounds(child, highlight) for child in children])
+    if not bounds:
+        return highlight
+
+    min_x = -script.width / 2 + TEXT_TEMPLATE_SAFE_MARGIN_X
+    max_x = script.width / 2 - TEXT_TEMPLATE_SAFE_MARGIN_X
+    current_x = float(highlight.get("transform_x", 0.0))
+    target_edge = min_x if current_x <= 0 else max_x
+    current_edge = bounds[0] if current_x <= 0 else bounds[2]
+    shift_x = target_edge - current_edge
+    if abs(shift_x) < 1.0:
+        return highlight
+
+    adjusted = dict(highlight)
+    adjusted["transform_x"] = round(current_x + shift_x, 2)
+    return adjusted
+
+
 def _time_ranges_overlap(first: dict, second: dict) -> bool:
     return int(first.get("start", 0)) < int(second.get("end", 0)) and int(second.get("start", 0)) < int(first.get("end", 0))
 
@@ -991,14 +1191,25 @@ def _spread_highlight_position(
     y_max = req.caption.highlight_transform_y_max
     x_span = max(1.0, x_max - x_min)
     y_span = max(1.0, y_max - y_min)
+    left_min, left_max = -782.0, -600.0
+    right_min, right_max = 600.0, 780.0
+    if x_min < -600.0 or x_max > 600.0:
+        left_min = max(x_min, left_min)
+        left_max = min(-600.0, left_max)
+        right_min = max(600.0, right_min)
+        right_max = min(x_max, right_max)
+    if left_min > left_max:
+        left_min, left_max = x_min, min(x_min + x_span * 0.25, x_max)
+    if right_min > right_max:
+        right_min, right_max = max(x_max - x_span * 0.25, x_min), x_max
 
     slots = (
-        (x_min + x_span * 0.12, y_min + y_span * 0.08),
-        (x_min + x_span * 0.88, y_min + y_span * 0.50),
-        (x_min + x_span * 0.12, y_min + y_span * 0.86),
-        (x_min + x_span * 0.88, y_min + y_span * 0.18),
-        (x_min + x_span * 0.50, y_min + y_span * 0.34),
-        (x_min + x_span * 0.50, y_min + y_span * 0.76),
+        ((left_min + left_max) / 2, y_min + y_span * 0.08),
+        ((right_min + right_max) / 2, y_min + y_span * 0.46),
+        ((left_min + left_max) / 2, y_min + y_span * 0.42),
+        ((right_min + right_max) / 2, y_min + y_span * 0.60),
+        ((left_min + left_max) / 2, y_min + y_span * 0.72),
+        ((right_min + right_max) / 2, y_min + y_span * 0.45),
     )
     fallback_position = None
     slot_indexes = list(range(len(slots)))
@@ -1011,8 +1222,9 @@ def _spread_highlight_position(
         base_x, base_y = slots[slot_index]
         jitter_x = randomizer.uniform(-x_span * 0.015, x_span * 0.015)
         jitter_y = randomizer.uniform(-y_span * 0.012, y_span * 0.012)
+        clamp_x_min, clamp_x_max = (left_min, left_max) if base_x < 0 else (right_min, right_max)
         position = (
-            _clamp_position(base_x + jitter_x, x_min, x_max),
+            _clamp_position(base_x + jitter_x, clamp_x_min, clamp_x_max),
             _clamp_position(base_y + jitter_y, y_min, y_max),
         )
         if fallback_position is None:
@@ -1175,7 +1387,19 @@ def _load_jianying_text_template_entries(
             "default_texts": cache_info["default_texts"],
         }
 
-    return sorted(entries_by_material_id.values(), key=lambda item: (item["rank"], item["name"]))
+    deduped_entries: dict[tuple[str, str, str], dict] = {}
+    for entry in entries_by_material_id.values():
+        dedupe_key = (
+            str(entry.get("name") or "").strip(),
+            str(entry.get("package_dir") or "").strip(),
+            str(entry.get("effect_id") or "").strip(),
+        )
+        existing = deduped_entries.get(dedupe_key)
+        if existing and existing["rank"] <= entry["rank"]:
+            continue
+        deduped_entries[dedupe_key] = entry
+
+    return sorted(deduped_entries.values(), key=lambda item: (item["rank"], item["name"]))
 
 
 def _choose_jianying_text_template_effect(
@@ -1315,7 +1539,7 @@ def _template_text_color(child: dict, rich_text: str) -> List[float]:
     return [1.0, 1.0, 1.0]
 
 
-def _template_text_material_content(child: dict, text: str) -> dict:
+def _template_text_material_content(child: dict, text: str, font_size: float) -> dict:
     text_params = child.get("text_params") or {}
     rich_text = _replace_rich_text_text(str(text_params.get("richText") or ""), text)
     effect_id = ""
@@ -1335,7 +1559,7 @@ def _template_text_material_content(child: dict, text: str) -> dict:
                 },
             },
         "range": [0, len(text.encode("utf-16-le"))],
-        "size": 22,
+        "size": font_size,
         "bold": False,
         "italic": False,
         "underline": False,
@@ -1450,7 +1674,13 @@ def _add_text_template_layers_to_draft(
         if isinstance(child, dict) and child.get("type") in {"text", "sticker"} and child.get("visible", True)
     ]
     ordered_children.sort(key=lambda child: int(child.get("order_in_layer") or 0))
-    highlight = _shift_highlight_to_keep_template_visible(script, highlight, ordered_children)
+    ordered_children = _template_visible_children_for_highlight(ordered_children)
+    seed_text = f"{highlight.get('_source_caption_index', '')}:{highlight.get('text', '')}:{template_entry.get('material_id', '')}"
+    template_randomizer = random.Random(seed_text)
+    template_scale = _auto_text_template_scale(template_randomizer, highlight)
+    ordered_children = _scaled_template_children(ordered_children, template_scale)
+    highlight = _align_highlight_template_to_side(script, highlight, ordered_children)
+    highlight = _shift_highlight_template_inside_top_regions(script, highlight, ordered_children)
 
     segment_ids: List[str] = []
     for layer_index, child in enumerate(ordered_children):
@@ -1479,7 +1709,10 @@ def _add_text_template_layers_to_draft(
             _add_template_text_effect_refs(script, text_segment, child)
             text_segment.export_material = lambda child=child, text=str(highlight.get("text") or ""), material_id=text_segment.material_id: {
                 "id": material_id,
-                "content": json.dumps(_template_text_material_content(child, text), ensure_ascii=False),
+                "content": json.dumps(
+                    _template_text_material_content(child, text, float(highlight.get("font_size", 28))),
+                    ensure_ascii=False,
+                ),
                 "typesetting": 0,
                 "alignment": 1,
                 "letter_spacing": 0,
@@ -1512,7 +1745,13 @@ def _add_text_template_layers_to_draft(
     return segment_ids
 
 
-def _timed_highlight_range(caption: dict, highlight_text: str, *, prefer_template_duration: bool = False) -> tuple[int, int]:
+def _timed_highlight_range(
+    caption: dict,
+    highlight_text: str,
+    *,
+    prefer_template_duration: bool = False,
+    video_duration: int | None = None,
+) -> tuple[int, int]:
     caption_start = int(caption.get("start", 0))
     caption_end = int(caption.get("end", caption_start))
     caption_duration = max(1, caption_end - caption_start)
@@ -1531,12 +1770,18 @@ def _timed_highlight_range(caption: dict, highlight_text: str, *, prefer_templat
     term_end_ratio = min(1.0, (match_index + term_length) / text_length)
     start = caption_start + int(caption_duration * term_start_ratio)
     semantic_duration = int(caption_duration * max(0.24, term_end_ratio - term_start_ratio + 0.14))
-    min_duration = min(caption_duration, TEXT_TEMPLATE_MIN_DISPLAY_DURATION if prefer_template_duration else 520_000)
-    max_duration = min(caption_duration, TEXT_TEMPLATE_MAX_DISPLAY_DURATION if prefer_template_duration else 1_250_000)
+    min_duration = TEXT_TEMPLATE_MIN_DISPLAY_DURATION if prefer_template_duration else min(caption_duration, 520_000)
+    max_duration = TEXT_TEMPLATE_MAX_DISPLAY_DURATION if prefer_template_duration else min(caption_duration, 1_250_000)
     highlight_duration = max(min_duration, min(max_duration, semantic_duration))
     end = min(caption_end, start + highlight_duration)
     if prefer_template_duration and end - start < min_duration:
         start = max(caption_start, end - min_duration)
+    timeline_end = max(caption_end, int(video_duration or caption_end))
+    if prefer_template_duration:
+        start = max(0, start - HIGHLIGHT_TIME_LEAD)
+        end = min(timeline_end, max(end, start + min_duration) + HIGHLIGHT_TIME_TAIL)
+        if end - start > TEXT_TEMPLATE_MAX_DISPLAY_DURATION:
+            end = min(timeline_end, start + TEXT_TEMPLATE_MAX_DISPLAY_DURATION)
     if end <= start:
         end = min(caption_end, start + min_duration)
     return start, max(start + 1, end)
@@ -1546,6 +1791,7 @@ def _build_highlight_captions(
     captions: List[dict],
     req: SmartPackagingRequest,
     randomizer: random.Random,
+    video_duration: int | None = None,
 ) -> List[dict]:
     if not req.caption.highlight_enabled or req.caption.highlight_max_count <= 0:
         return []
@@ -1553,41 +1799,80 @@ def _build_highlight_captions(
     preset = _style_preset(req.style)
     use_text_effect = req.caption.highlight_style_mode == "effect"
     text_effects = _merge_candidates(req.caption.text_effects, preset["text_effects"]) if use_text_effect else []
-    enable_jianying_text_templates = bool(
-        req.caption.jianying_text_template_draft_dir
-        or req.caption.text_template_names
-    )
+    enable_jianying_text_templates = req.caption.highlight_style_mode == "template"
     text_template_entries = (
         _load_jianying_text_template_entries(req.caption.jianying_text_template_draft_dir)
-        if req.caption.highlight_style_mode == "template" and enable_jianying_text_templates
+        if enable_jianying_text_templates
         else []
     )
 
     in_animations = _merge_candidates(req.caption.in_animations, preset["caption_in_animations"])
     loop_animations = _merge_candidates(req.caption.loop_animations, preset["caption_loop_animations"])
-    candidates = []
     seen = set()
-
+    selected = []
+    next_allowed_source_index = 0
+    selected_source_indices: set[int] = set()
+    max_highlights_per_source_caption = 2
+    grouped_captions: List[tuple[int, List[tuple[int, dict]]]] = []
     for index, caption in enumerate(captions):
-        explicit_terms = _extract_explicit_highlight_terms(caption, req.caption.highlight_max_chars)
-        if explicit_terms:
-            term_candidates = [
-                (_highlight_score(term, index) + 20 - term_index, term)
-                for term_index, term in enumerate(explicit_terms)
-            ]
+        source_caption_index = int(caption.get("_source_caption_index", index))
+        if grouped_captions and grouped_captions[-1][0] == source_caption_index:
+            grouped_captions[-1][1].append((index, caption))
         else:
-            term_candidates = _extract_terms_from_text(str(caption.get("text", "")), req.caption.highlight_max_chars, index)
+            grouped_captions.append((source_caption_index, [(index, caption)]))
 
-        for score, highlight_text in term_candidates[:3]:
+    for source_caption_index, caption_group in grouped_captions:
+        is_cooldown_caption = (
+            source_caption_index < next_allowed_source_index
+            and source_caption_index not in selected_source_indices
+        )
+
+        source_candidates: List[tuple[int, int, int, dict, str]] = []
+        for index, caption in caption_group:
+            explicit_terms = _extract_explicit_highlight_terms(caption, req.caption.highlight_max_chars)
+            if explicit_terms:
+                term_candidates = [
+                    (_highlight_score(term, index) + 20 - term_index, term)
+                    for term_index, term in enumerate(explicit_terms)
+                ]
+            else:
+                term_candidates = _extract_terms_from_text(str(caption.get("text", "")), req.caption.highlight_max_chars, index)
+            if is_cooldown_caption:
+                term_candidates = [
+                    (score, term)
+                    for score, term in term_candidates
+                    if _is_high_priority_highlight(term, score)
+                ]
+            for candidate_order, (score, highlight_text) in enumerate(term_candidates[:3]):
+                source_candidates.append((score, index, candidate_order, caption, highlight_text))
+
+        deduped_source_candidates: dict[str, tuple[int, int, int, dict, str]] = {}
+        for score, index, candidate_order, caption, highlight_text in source_candidates:
             if not highlight_text or highlight_text in seen:
                 continue
             if score < 0:
                 continue
-            seen.add(highlight_text)
-            candidates.append((score, index, caption, highlight_text))
+            existing = deduped_source_candidates.get(highlight_text)
+            if not existing or (score, -index, -candidate_order) > (existing[0], -existing[1], -existing[2]):
+                deduped_source_candidates[highlight_text] = (score, index, candidate_order, caption, highlight_text)
 
-    candidates.sort(key=lambda item: (-item[0], item[1]))
-    selected = sorted(candidates[: req.caption.highlight_max_count], key=lambda item: item[1])
+        selected_from_caption = 0
+        for score, index, _, caption, highlight_text in sorted(
+            deduped_source_candidates.values(),
+            key=lambda item: (-item[0], item[1], item[2]),
+        )[:max_highlights_per_source_caption]:
+            seen.add(highlight_text)
+            selected.append((score, index, caption, highlight_text))
+            selected_from_caption += 1
+            if len(selected) >= req.caption.highlight_max_count:
+                break
+
+        if selected_from_caption:
+            selected_source_indices.add(source_caption_index)
+            next_allowed_source_index = source_caption_index + 2
+        if len(selected) >= req.caption.highlight_max_count:
+            break
+
     selected_offsets_by_caption: dict[int, int] = {}
     used_template_effect_ids: set[str] = set()
 
@@ -1600,14 +1885,20 @@ def _build_highlight_captions(
             caption,
             highlight_text,
             prefer_template_duration=req.caption.highlight_style_mode == "template" and enable_jianying_text_templates,
+            video_duration=video_duration,
         )
-        highlight["_source_caption_index"] = caption_index
+        highlight["_source_caption_index"] = int(caption.get("_source_caption_index", caption_index))
         highlight["_source_caption_start"] = int(caption.get("start", timed_start))
         highlight["_source_caption_end"] = int(caption.get("end", timed_end))
         highlight["text"] = highlight_text
         highlight["start"] = timed_start
         highlight["end"] = timed_end
-        highlight["font_size"] = req.caption.highlight_font_size
+        if req.caption.highlight_style_mode == "template":
+            highlight["font_size"] = req.caption.font_size + 5
+        else:
+            highlight["font_size"] = req.caption.highlight_font_size
+        highlight["template_target_font_size"] = req.caption.font_size + 5
+        highlight["text_template_scale"] = req.caption.text_template_scale
         if use_text_effect:
             highlight["text_effect"] = _choose_optional(text_effects, randomizer)
         else:
@@ -1667,8 +1958,10 @@ def _choose_highlight_sound_name(
     names: Sequence[str],
     randomizer: random.Random,
     index: int | None = None,
+    used_names: set[str] | None = None,
 ) -> str:
     candidates = [name.strip() for name in names if name.strip()] or list(DEFAULT_HIGHLIGHT_SOUND_EFFECTS)
+    normalized_used = {_normalize_sound_lookup_key(name) for name in (used_names or set())}
     target_tone = _tone_for_highlight(text)
     preferred_tones = {
         "impact": ("impact", "whoosh", "pop"),
@@ -1680,6 +1973,18 @@ def _choose_highlight_sound_name(
     matched_names = []
     for tone in preferred_tones:
         matched_names.extend([name for name in candidates if _sound_tone_for_name(name) == tone])
+    unused_matched_names = [
+        name for name in matched_names
+        if _normalize_sound_lookup_key(name) not in normalized_used
+    ]
+    if unused_matched_names:
+        return randomizer.choice(unused_matched_names)
+    unused_candidates = [
+        name for name in candidates
+        if _normalize_sound_lookup_key(name) not in normalized_used
+    ]
+    if unused_candidates:
+        return randomizer.choice(unused_candidates)
     if matched_names:
         return matched_names[index % len(matched_names)] if index is not None else randomizer.choice(matched_names)
     return candidates[index % len(candidates)] if index is not None else randomizer.choice(candidates)
@@ -1761,15 +2066,18 @@ def _load_jianying_sound_entries(sound_draft_dir: str | None = None) -> List[dic
         ] or [value for value in data.values() if isinstance(value, dict)]
 
     entries: List[dict] = []
-    seen = set()
+    seen_material_ids = set()
+    seen_names = set()
     for value in values:
         if value.get("materialCategory") != "audio" or value.get("materialSubcategory") != "sound_effect":
             continue
         material_id = str(value.get("materialId") or "")
         name = str(value.get("materialName") or "").strip()
-        if not name or material_id in seen:
+        name_key = _normalize_sound_lookup_key(name)
+        if not name or material_id in seen_material_ids or name_key in seen_names:
             continue
-        seen.add(material_id)
+        seen_material_ids.add(material_id)
+        seen_names.add(name_key)
         entries.append({"name": name, "material_id": material_id})
     return entries
 
@@ -1819,6 +2127,44 @@ def _load_jianying_cache_audio_paths(cache_dir: str | None = None) -> List[str]:
     return [str(path) for path in paths]
 
 
+def _load_jianying_cache_audio_path_by_hex(cache_dir: str | None = None) -> dict[str, str]:
+    cache_path = pathlib.Path(cache_dir or DEFAULT_JIANYING_MUSIC_CACHE_DIR).expanduser()
+    if not cache_path.is_dir():
+        return {}
+
+    download_config_path = cache_path / "downLoadcfg"
+    if not download_config_path.is_file():
+        return {}
+
+    mapping: dict[str, str] = {}
+    try:
+        config_data = json.loads(download_config_path.read_text(encoding="utf-8"))
+        items = config_data.get("list", [])
+        if not isinstance(items, list):
+            return {}
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            hex_key = str(item.get("hex") or "").strip().lower()
+            raw_path = item.get("path")
+            if not hex_key or not raw_path:
+                continue
+            audio_path = pathlib.Path(str(raw_path))
+            if not audio_path.is_absolute():
+                audio_path = cache_path / audio_path
+            if audio_path.suffix.lower() not in SUPPORTED_JIANYING_AUDIO_SUFFIXES:
+                continue
+            if audio_path.is_file():
+                mapping[hex_key] = str(audio_path)
+    except Exception as exc:
+        logger.warning(f"Failed to read Jianying audio cache config: {download_config_path}, error={exc}")
+    return mapping
+
+
+def _jianying_material_cache_hex(material_id: str) -> str:
+    return hashlib.md5(str(material_id).encode("utf-8")).hexdigest()
+
+
 def _load_preview_sound_files() -> List[pathlib.Path]:
     preview_dir = pathlib.Path(SOUND_EFFECT_PREVIEW_DIR)
     if not preview_dir.is_dir():
@@ -1834,8 +2180,9 @@ def _load_preview_sound_files() -> List[pathlib.Path]:
 
 
 def _build_jianying_sound_path_map(req: SmartPackagingRequest) -> dict[str, str]:
-    preview_files = _load_preview_sound_files()
-    if preview_files:
+    use_preview_cache = not req.sound_effects.jianying_sound_draft_dir
+    preview_files = _load_preview_sound_files() if use_preview_cache else []
+    if use_preview_cache and preview_files:
         mapping: dict[str, str] = {}
         for audio_path in preview_files:
             name = audio_path.stem
@@ -1844,16 +2191,37 @@ def _build_jianying_sound_path_map(req: SmartPackagingRequest) -> dict[str, str]
         return mapping
 
     entries = _load_jianying_sound_entries(req.sound_effects.jianying_sound_draft_dir)
-    audio_paths = _load_jianying_cache_audio_paths(req.sound_effects.jianying_cache_dir)
-    if not entries or not audio_paths:
+    if not entries:
         return {}
 
-    audio_paths = audio_paths[-len(entries):]
     mapping: dict[str, str] = {}
-    for entry, audio_path in zip(entries, audio_paths):
+    cache_paths_by_hex = _load_jianying_cache_audio_path_by_hex(req.sound_effects.jianying_cache_dir)
+    for entry in entries:
+        material_id = str(entry.get("material_id") or "")
+        audio_path = cache_paths_by_hex.get(_jianying_material_cache_hex(material_id)) if material_id else None
+        if not audio_path:
+            continue
         name = entry["name"]
         mapping[name] = audio_path
         mapping[_normalize_sound_lookup_key(name)] = audio_path
+        if material_id:
+            mapping[material_id] = audio_path
+
+    if mapping:
+        return mapping
+
+    audio_paths = _load_jianying_cache_audio_paths(req.sound_effects.jianying_cache_dir)
+    if not audio_paths:
+        return {}
+
+    audio_paths = audio_paths[-len(entries):]
+    for entry, audio_path in zip(entries, audio_paths):
+        name = entry["name"]
+        material_id = str(entry.get("material_id") or "")
+        mapping[name] = audio_path
+        mapping[_normalize_sound_lookup_key(name)] = audio_path
+        if material_id:
+            mapping[material_id] = audio_path
     return mapping
 
 
@@ -1894,8 +2262,9 @@ def get_smart_packaging_sound_effects(
     req: SmartPackagingSoundEffectsRequest,
     base_url: str,
 ) -> SmartPackagingSoundEffectsResponse:
-    preview_files = _load_preview_sound_files()
-    if preview_files:
+    use_preview_cache = not req.jianying_sound_draft_dir
+    preview_files = _load_preview_sound_files() if use_preview_cache else []
+    if use_preview_cache and preview_files:
         items = []
         for audio_path in preview_files:
             preview_url = f"{base_url.rstrip('/')}/output/sound_effect_previews/{audio_path.name}"
@@ -2034,6 +2403,7 @@ def _build_highlight_audio_infos(
     )
     next_available_start = 0
     seen_source_keys = set()
+    used_sound_names: set[str] = set()
     overlap_padding = 20_000
 
     for index, caption in enumerate(highlight_captions):
@@ -2068,6 +2438,7 @@ def _build_highlight_audio_infos(
             req.sound_effects.highlight_sound_effects,
             randomizer,
             index,
+            used_sound_names,
         )
         jianying_audio_path = _resolve_jianying_sound_path(sound_name, jianying_sound_path_map)
         if jianying_audio_path:
@@ -2082,6 +2453,7 @@ def _build_highlight_audio_infos(
                     "volume": req.sound_effects.volume,
                 }
             )
+            used_sound_names.add(sound_name)
             next_available_start = max(next_available_start, end + overlap_padding)
             continue
 
@@ -2099,6 +2471,7 @@ def _build_highlight_audio_infos(
                 "volume": req.sound_effects.volume,
             }
         )
+        used_sound_names.add(sound_name)
         next_available_start = max(next_available_start, end + overlap_padding)
 
     return audio_infos
@@ -2155,8 +2528,9 @@ def _apply_highlight_keywords_to_plain_captions(
 
     styled = [dict(caption) for caption in captions]
     for index, caption in enumerate(styled):
+        caption_source_index = int(caption.get("_source_caption_index", index))
         terms = [
-            term for term in terms_by_caption_index.get(index, [])
+            term for term in terms_by_caption_index.get(caption_source_index, [])
             if term and term in str(caption.get("text", ""))
         ]
         if not terms:
@@ -2174,6 +2548,41 @@ def _apply_highlight_keywords_to_plain_captions(
             caption["keyword_border_color"] = req.caption.keyword_border_color
         caption.setdefault("keyword_font_size", caption.get("font_size") or req.caption.font_size)
     return styled
+
+
+def _build_plain_caption_keyword_highlights(captions: List[dict], req: SmartPackagingRequest) -> List[dict]:
+    if not captions or not req.caption.keyword_color:
+        return []
+
+    keyword_highlights: List[dict] = []
+    for index, caption in enumerate(captions):
+        explicit_terms = _extract_explicit_highlight_terms(caption, req.caption.highlight_max_chars)
+        if explicit_terms:
+            terms = explicit_terms
+        else:
+            terms = [
+                term
+                for _, term in _extract_terms_from_text(
+                    str(caption.get("text", "")),
+                    req.caption.highlight_max_chars,
+                    index,
+                )[:3]
+            ]
+
+        caption_text = str(caption.get("text", ""))
+        source_index = int(caption.get("_source_caption_index", index))
+        seen_terms: set[str] = set()
+        for term in terms:
+            if not term or term in seen_terms or term not in caption_text:
+                continue
+            seen_terms.add(term)
+            keyword_highlights.append(
+                {
+                    "_source_caption_index": source_index,
+                    "text": term,
+                }
+            )
+    return keyword_highlights
 
 
 def _resolve_captions(
@@ -2469,10 +2878,11 @@ async def smart_packaging(req: SmartPackagingRequest) -> SmartPackagingResponse:
             if req.caption.enabled:
                 captions = await asyncio.to_thread(_resolve_captions, prepared, req, randomizer)
                 if captions:
-                    highlight_captions = _build_highlight_captions(captions, req, randomizer)
+                    plain_keyword_highlights = _build_plain_caption_keyword_highlights(captions, req)
+                    highlight_captions = _build_highlight_captions(captions, req, randomizer, prepared.duration)
                     plain_captions = _apply_highlight_keywords_to_plain_captions(
                         _apply_plain_caption_style(captions, req),
-                        highlight_captions,
+                        plain_keyword_highlights,
                         req,
                     )
                     _, _, _, caption_segment_ids, _ = await add_captions_async(
@@ -2488,9 +2898,7 @@ async def smart_packaging(req: SmartPackagingRequest) -> SmartPackagingResponse:
 
                     if highlight_captions:
                         fallback_highlight_captions = highlight_captions
-                        if req.caption.highlight_style_mode == "template" and (
-                            req.caption.jianying_text_template_draft_dir or req.caption.text_template_names
-                        ):
+                        if req.caption.highlight_style_mode == "template":
                             template_entries = _load_jianying_text_template_entries(req.caption.jianying_text_template_draft_dir)
                             fallback_highlight_captions = []
                             used_template_material_ids: set[str] = set()

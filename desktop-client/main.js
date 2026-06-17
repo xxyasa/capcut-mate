@@ -1,4 +1,7 @@
 const { app, BrowserWindow, dialog, shell } = require('electron');
+const { spawn } = require('child_process');
+const fs = require('fs');
+const net = require('net');
 const path = require('path');
 const logger = require('./nodeapi/logger');
 
@@ -7,6 +10,133 @@ const { setupIpcHandlers } = require('./nodeapi/ipcHandlers');
 
 let mainWindow;
 let ipcHandlersInitialized = false;
+let backendProcess = null;
+let runtimeConfig = {
+  apiBase: process.env.CAPCUT_MATE_API_BASE || 'http://localhost:30000/openapi/capcut-mate/v1',
+  assetsVersion: ''
+};
+
+function getResourcePath(...parts) {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, ...parts)
+    : path.join(__dirname, '..', ...parts);
+}
+
+function isPortAvailable(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, '127.0.0.1');
+  });
+}
+
+async function chooseBackendPort() {
+  for (let port = 30000; port <= 30020; port += 1) {
+    if (await isPortAvailable(port)) {
+      return port;
+    }
+  }
+  throw new Error('端口 30000-30020 均不可用');
+}
+
+function getPythonBackendCommand() {
+  if (app.isPackaged) {
+    return {
+      command: getResourcePath('backend', 'capcut-mate-backend.exe'),
+      args: []
+    };
+  }
+
+  const windowsPython = path.join(__dirname, '..', '.venv', 'Scripts', 'python.exe');
+  const posixPython = path.join(__dirname, '..', '.venv', 'bin', 'python');
+  const command = fs.existsSync(windowsPython)
+    ? windowsPython
+    : fs.existsSync(posixPython)
+      ? posixPython
+      : 'python3';
+  return {
+    command,
+    args: [path.join(__dirname, '..', 'main.py')]
+  };
+}
+
+function readAssetsVersion(assetsDir) {
+  const manifestPath = path.join(assetsDir, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    return '';
+  }
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+    return String(manifest.version || '');
+  } catch (error) {
+    logger.warn('读取素材 manifest 失败:', error);
+    return '';
+  }
+}
+
+function pipeBackendLogs(logPath) {
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  return fs.createWriteStream(logPath, { flags: 'a' });
+}
+
+async function startBackend() {
+  if (backendProcess) {
+    return runtimeConfig;
+  }
+
+  const port = await chooseBackendPort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const assetsDir = getResourcePath('smart-assets');
+  const { command, args } = getPythonBackendCommand();
+  const backendLog = pipeBackendLogs(path.join(app.getPath('userData'), 'logs', 'backend.log'));
+
+  runtimeConfig = {
+    apiBase: `${baseUrl}/openapi/capcut-mate/v1`,
+    assetsVersion: readAssetsVersion(assetsDir)
+  };
+
+  backendProcess = spawn(command, args, {
+    cwd: path.join(__dirname, '..'),
+    env: {
+      ...process.env,
+      SMART_PACKAGING_ASSETS_DIR: assetsDir,
+      JIANYING_TEXT_TEMPLATE_DRAFT_DIR: path.join(assetsDir, 'text_templates', '文字模板2'),
+      JIANYING_ARTIST_EFFECT_CACHE_DIR: path.join(assetsDir, 'artistEffect'),
+      JIANYING_SOUND_DRAFT_DIR: path.join(assetsDir, 'sound_effects', '音效库2'),
+      JIANYING_MUSIC_CACHE_DIR: path.join(assetsDir, 'music'),
+      CAPCUT_MATE_HOST: '127.0.0.1',
+      CAPCUT_MATE_PORT: String(port),
+      DRAFT_URL: `${baseUrl}/openapi/capcut-mate/v1/get_draft`,
+      DOWNLOAD_URL: `${baseUrl}/`
+    },
+    windowsHide: true
+  });
+
+  backendProcess.stdout.pipe(backendLog);
+  backendProcess.stderr.pipe(backendLog);
+  backendProcess.on('exit', (code, signal) => {
+    logger.info(`后端进程退出 code=${code} signal=${signal}`);
+    backendProcess = null;
+    backendLog.end();
+  });
+  backendProcess.on('error', (error) => {
+    logger.error('后端进程启动失败:', error);
+  });
+
+  logger.info(`后端服务已启动: ${runtimeConfig.apiBase}`);
+  return runtimeConfig;
+}
+
+function stopBackend() {
+  if (!backendProcess) {
+    return;
+  }
+  backendProcess.kill();
+  backendProcess = null;
+}
 
 function createWindow() {
   // 避免重复创建窗口
@@ -66,7 +196,9 @@ function createWindow() {
 
   // 只初始化一次IPC处理程序
   if (!ipcHandlersInitialized) {
-    setupIpcHandlers(mainWindow);
+    setupIpcHandlers(mainWindow, {
+      getRuntimeConfig: () => runtimeConfig
+    });
     ipcHandlersInitialized = true;
   }
 
@@ -125,8 +257,23 @@ app.on('browser-window-created', (event, window) => {
 });
 
 // 当Electron完成初始化并准备创建浏览器窗口时调用此方法
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  try {
+    await startBackend();
+  } catch (error) {
+    logger.error('启动本地后端失败:', error);
+    dialog.showMessageBoxSync({
+      type: 'error',
+      title: '本地服务启动失败',
+      message: error.message || '本地服务启动失败，请联系技术同学。',
+      buttons: ['确定']
+    });
+  }
   createWindow();
+});
+
+app.on('before-quit', () => {
+  stopBackend();
 });
 
 // 当所有窗口都关闭时退出应用

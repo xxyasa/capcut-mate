@@ -22,7 +22,10 @@ console.log(process.versions.electron);
 console.log(process.versions.chrome);
 
 // 接收mainWindow作为参数
-function setupIpcHandlers(mainWindow) {
+function setupIpcHandlers(mainWindow, options = {}) {
+  const getRuntimeConfig = typeof options.getRuntimeConfig === 'function'
+    ? options.getRuntimeConfig
+    : () => ({});
 
   ipcMain.handle('get-download-log', async (event) => {
     return await readDownloadLog();
@@ -104,6 +107,10 @@ function setupIpcHandlers(mainWindow) {
 
   ipcMain.handle('get-app-version', async () => {
     return app.getVersion();
+  });
+
+  ipcMain.handle('get-runtime-config', async () => {
+    return getRuntimeConfig();
   });
 }
 

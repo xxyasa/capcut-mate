@@ -62,4 +62,6 @@ logger.info("CapCut Mate API")
 # 5. 启动
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=30000, log_config=None, log_level="info")
+    host = os.getenv("CAPCUT_MATE_HOST", "0.0.0.0")
+    port = int(os.getenv("CAPCUT_MATE_PORT", "30000"))
+    uvicorn.run(app, host=host, port=port, log_config=None, log_level="info")

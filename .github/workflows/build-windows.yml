@@ -1,0 +1,112 @@
+name: Build Windows Desktop
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: |
+            desktop-client/package-lock.json
+            desktop-client/web/package-lock.json
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Download smart assets
+        shell: pwsh
+        env:
+          SMART_ASSETS_URL: ${{ secrets.SMART_ASSETS_URL }}
+        run: |
+          if (!$env:SMART_ASSETS_URL) {
+            throw "Missing GitHub secret SMART_ASSETS_URL. Upload smart-assets.zip to a private/internal URL and add it as a repository secret."
+          }
+          curl.exe -L --fail --retry 3 --output smart-assets.zip "$env:SMART_ASSETS_URL"
+          if (Test-Path "smart-assets") {
+            Remove-Item -Recurse -Force "smart-assets"
+          }
+          Expand-Archive -Path smart-assets.zip -DestinationPath .
+          if (!(Test-Path "smart-assets/manifest.json")) {
+            if (Test-Path "smart-assets-main/manifest.json") {
+              Move-Item smart-assets-main smart-assets
+            } else {
+              throw "Downloaded asset package must contain smart-assets/manifest.json."
+            }
+          }
+
+      - name: Verify smart assets
+        shell: pwsh
+        run: |
+          if (!(Test-Path "smart-assets/manifest.json")) {
+            throw "smart-assets/manifest.json not found."
+          }
+          if (!(Test-Path "smart-assets/text_templates/文字模板2/key_value.json")) {
+            throw "Text template draft not found in smart-assets."
+          }
+          if (!(Test-Path "smart-assets/sound_effects/音效库2/key_value.json")) {
+            throw "Sound draft not found in smart-assets."
+          }
+          if (!(Test-Path "smart-assets/music/downLoadcfg")) {
+            throw "smart-assets/music/downLoadcfg not found."
+          }
+
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          uv sync
+          uv pip install pyinstaller
+
+      - name: Build backend exe
+        shell: pwsh
+        run: |
+          uv run pyinstaller `
+            --name capcut-mate-backend `
+            --onedir `
+            --add-data "template;template" `
+            --add-data "config;config" `
+            --add-data "assets;assets" `
+            main.py
+
+      - name: Install desktop dependencies
+        working-directory: desktop-client
+        run: npm ci
+
+      - name: Install web dependencies
+        working-directory: desktop-client/web
+        run: npm ci
+
+      - name: Build web UI
+        working-directory: desktop-client
+        run: npm run web:build
+
+      - name: Build Windows installer
+        working-directory: desktop-client
+        run: npm run build-win-installer
+
+      - name: Build Windows green zip
+        working-directory: desktop-client
+        run: npm run build-win-green
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: capcut-mate-windows
+          path: |
+            desktop-client/dist/capcut-mate-windows-x64-installer.exe
+            desktop-client/dist/capcut-mate-windows-x64-green.zip
+          if-no-files-found: error

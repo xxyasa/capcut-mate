@@ -10,27 +10,52 @@ const DEFAULT_ASR_ENDPOINT = "https://model-api.ecmax.cn/v1/audio/transcriptions
 const DEFAULT_ASR_MODEL = "whisper-large-v3";
 const DEFAULT_LLM_ENDPOINT = "https://model-api.ecmax.cn/v1/chat/completions";
 const DEFAULT_LLM_MODEL = "deepseek-v4-flash";
-const HIGHLIGHT_TRANSFORM_X_MIN = -360;
-const HIGHLIGHT_TRANSFORM_X_MAX = 360;
-const HIGHLIGHT_TRANSFORM_Y_MIN = -700;
-const HIGHLIGHT_TRANSFORM_Y_MAX = 260;
-const PLAIN_CAPTION_TRANSFORM_Y = -1500;
-const DEFAULT_JIANYING_SOUND_DRAFT_DIR = "/Users/xinyu/Movies/JianyingPro/User Data/Projects/com.lveditor.draft/音效";
-const DEFAULT_JIANYING_TEXT_TEMPLATE_DRAFT_DIR = "/Users/xinyu/Movies/JianyingPro/User Data/Projects/com.lveditor.draft/文字模板-电商模板";
-const DEFAULT_HIGHLIGHT_SOUND_EFFECTS = [
-  "叮（金属声）",
-  "Magic reveal",
-  "嗖嗖",
-  "闪亮登场音效",
-  "卡通弹跳音",
+const DEFAULT_DOMAIN_TERMS = [
+  "格兰芬多",
+  "斯莱特林",
+  "赫奇帕奇",
+  "拉文克劳",
+  "霍格沃茨",
+  "魔杖",
+  "宝剑",
+  "格兰芬多宝剑",
 ];
-const EXCLUDED_TEXT_TEMPLATE_KEYWORDS = ["疯狂安利", "实用满分"];
+const HIGHLIGHT_TRANSFORM_X_MIN = -782;
+const HIGHLIGHT_TRANSFORM_X_MAX = 780;
+const HIGHLIGHT_TRANSFORM_Y_MIN = 520;
+const HIGHLIGHT_TRANSFORM_Y_MAX = 820;
+const PLAIN_CAPTION_TRANSFORM_Y = -1500;
+const DEFAULT_JIANYING_SOUND_DRAFT_DIR = "";
+const DEFAULT_JIANYING_TEXT_TEMPLATE_DRAFT_DIR = "";
+const DEFAULT_HIGHLIGHT_SOUND_EFFECTS = [
+  "滴，提示音",
+  "叮叮叮",
+  "哇呜",
+  "啵1",
+  "唰",
+  "Ding，可爱提示音",
+  "魔法音效",
+  "正确",
+  "叮",
+];
+const EXCLUDED_TEXT_TEMPLATE_KEYWORDS = ["疯狂安利", "实用满分", "超值好物", "简约盐系穿搭"];
 
 function splitLines(value) {
   return value
     .split("\n")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function normalizeApiKey(value) {
+  let cleaned = String(value || "").trim().replace(/\u3000/g, " ");
+  if (/^authorization\s*:/i.test(cleaned)) {
+    cleaned = cleaned.replace(/^authorization\s*:/i, "").trim();
+  }
+  if (/^bearer\s+/i.test(cleaned)) {
+    cleaned = cleaned.replace(/^bearer\s+/i, "").trim();
+  }
+  return cleaned.replace(/\s+/g, "");
 }
 
 function buildVideoItems(videoUrls, localVideoPaths, captionLines) {
@@ -58,6 +83,7 @@ function SmartPackagingPage() {
   const [enableLlmCaption, setEnableLlmCaption] = useState(true);
   const [llmEndpoint, setLlmEndpoint] = useState(DEFAULT_LLM_ENDPOINT);
   const [llmModel, setLlmModel] = useState(DEFAULT_LLM_MODEL);
+  const [domainTerms, setDomainTerms] = useState(DEFAULT_DOMAIN_TERMS.join("\n"));
   const [style, setStyle] = useState("dynamic");
   const [muteOriginal, setMuteOriginal] = useState(false);
   const [fontSize, setFontSize] = useState(12);
@@ -79,7 +105,7 @@ function SmartPackagingPage() {
   const [effectTitles, setEffectTitles] = useState("抖动\n模糊\n复古DV");
   const [effectCount, setEffectCount] = useState(0);
   const [enableStickers, setEnableStickers] = useState(true);
-  const [stickerCount, setStickerCount] = useState(6);
+  const [stickerCount, setStickerCount] = useState(0);
   const [stickerKeywords, setStickerKeywords] = useState("");
   const [filterTitles, setFilterTitles] = useState("亮夏\n初恋\n清透自然");
   const [filterIntensity, setFilterIntensity] = useState(80);
@@ -143,9 +169,8 @@ function SmartPackagingPage() {
         return;
       }
       setTextTemplateCatalog(templates);
-      setTextTemplateNames((current) => current.trim() || templates
+      setTextTemplateNames(templates
         .filter((item) => !EXCLUDED_TEXT_TEMPLATE_KEYWORDS.some((keyword) => item.name.includes(keyword)))
-        .slice(0, 12)
         .map((item) => item.name)
         .join("\n"));
     } catch (error) {
@@ -167,7 +192,9 @@ function SmartPackagingPage() {
         return;
       }
       setSoundEffectCatalog(effects);
-      setHighlightSoundEffects((current) => current.trim() || DEFAULT_HIGHLIGHT_SOUND_EFFECTS.join("\n"));
+      setHighlightSoundEffects(effects.length > 0
+        ? effects.map((item) => item.name).filter(Boolean).join("\n")
+        : DEFAULT_HIGHLIGHT_SOUND_EFFECTS.join("\n"));
     } catch (error) {
       toast.error(error?.response?.data?.message || error.message || "加载音效库失败");
     } finally {
@@ -176,19 +203,33 @@ function SmartPackagingPage() {
   };
 
   useEffect(() => {
+    const loadRuntimeConfig = async () => {
+      try {
+        const config = await window.electronAPI?.getRuntimeConfig?.();
+        if (config?.apiBase) {
+          setApiBase(config.apiBase);
+        }
+      } catch (error) {
+        // Browser mode keeps using DEFAULT_API_BASE.
+      }
+    };
+    loadRuntimeConfig();
+  }, []);
+
+  useEffect(() => {
     loadTextEffectCatalog();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [apiBase]);
 
   useEffect(() => {
     loadTextTemplateCatalog();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [apiBase]);
 
   useEffect(() => {
     loadSoundEffectCatalog();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [apiBase]);
 
   const toggleTextEffect = (title) => {
     const current = selectedTextEffects;
@@ -251,6 +292,7 @@ function SmartPackagingPage() {
     const videos = buildVideoItems(splitLines(videoUrls), localVideoPaths, splitLines(captionTexts));
     const bgmList = splitLines(bgmUrls);
     const soundList = splitLines(soundEffectUrls);
+    const normalizedAsrApiKey = normalizeApiKey(asrApiKey);
 
     return {
       videos,
@@ -284,7 +326,7 @@ function SmartPackagingPage() {
         enabled: enableAsr,
         provider: "openai_compatible",
         endpoint: asrEndpoint.trim() || undefined,
-        api_key: asrApiKey.trim() || undefined,
+        api_key: normalizedAsrApiKey || undefined,
         model: asrModel.trim() || DEFAULT_ASR_MODEL,
         language: asrLanguage.trim() || undefined,
         timestamp_granularities: timestampGranularities(),
@@ -294,6 +336,7 @@ function SmartPackagingPage() {
         enabled: enableLlmCaption,
         endpoint: llmEndpoint.trim() || undefined,
         model: llmModel.trim() || DEFAULT_LLM_MODEL,
+        domain_terms: splitLines(domainTerms),
         timeout: 180,
       },
       effects: {
@@ -594,6 +637,14 @@ function SmartPackagingPage() {
                       <span>LLM 模型</span>
                       <input value={llmModel} onChange={(e) => setLlmModel(e.target.value)} />
                     </label>
+                    <label className="smart-field smart-field-wide">
+                      <span>专有名词标准词库，每行一个</span>
+                      <textarea
+                        value={domainTerms}
+                        onChange={(e) => setDomainTerms(e.target.value)}
+                        placeholder="格兰芬多&#10;霍格沃茨&#10;品牌名&#10;产品名"
+                      />
+                    </label>
                   </>
                 )}
               </div>
@@ -656,60 +707,6 @@ function SmartPackagingPage() {
                   placeholder="电商-新品首发"
                 />
               </label>
-              <div className="smart-effect-picker smart-field-wide">
-                <div className="smart-effect-head">
-                  <div>
-                    <div className="smart-effect-title">重点花字样式</div>
-                    <div className="smart-effect-subtitle">
-                      默认使用干净文字模板，字幕固定底部，重点词会在画面中上部出现
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-small"
-                    disabled={isLoadingTextEffects}
-                    onClick={loadTextEffectCatalog}
-                  >
-                    {isLoadingTextEffects ? "加载中..." : "刷新花字库"}
-                  </button>
-                </div>
-                <div className="smart-effect-tools">
-                  <input
-                    value={textEffectQuery}
-                    onChange={(e) => setTextEffectQuery(e.target.value)}
-                    placeholder="搜索花字名称，例如 发光、综艺、火焰"
-                  />
-                  <div className="smart-effect-count">已选 {selectedTextEffects.length} 个</div>
-                </div>
-                <div className="smart-effect-list">
-                  {visibleTextEffects.map((item) => {
-                    const title = item.title || item.id;
-                    const selected = selectedTextEffects.includes(title);
-                    return (
-                      <button
-                        type="button"
-                        className={`smart-effect-card ${selected ? "selected" : ""}`}
-                        key={`${item.id}-${title}`}
-                        onClick={() => toggleTextEffect(title)}
-                      >
-                        <span className="smart-effect-name" title={title}>{title}</span>
-                        {item.is_vip && <span className="smart-effect-badge">VIP</span>}
-                      </button>
-                    );
-                  })}
-                  {!isLoadingTextEffects && visibleTextEffects.length === 0 && (
-                    <div className="smart-effect-empty">没有匹配的花字样式</div>
-                  )}
-                </div>
-              </div>
-              <label className="smart-field smart-field-wide">
-                <span>花字效果池（备用，当前默认使用文字模板）</span>
-                <textarea
-                  value={textEffects}
-                  onChange={(e) => setTextEffects(e.target.value)}
-                  placeholder="白字橘色发光花字"
-                />
-              </label>
               <label className="smart-toggle">
                 <input
                   type="checkbox"
@@ -719,7 +716,7 @@ function SmartPackagingPage() {
                 <span>仅重点词/金句使用花字</span>
               </label>
               <label className="smart-field">
-                <span>重点花字字号</span>
+                <span>备用花字字号（文字模板自动缩放）</span>
                 <input
                   type="number"
                   min="1"

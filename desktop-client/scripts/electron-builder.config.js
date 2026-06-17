@@ -30,6 +30,16 @@ module.exports = {
     oneClick: false,
     allowToChangeInstallationDirectory: true,
   },
+  extraResources: [
+    {
+      from: "../dist/capcut-mate-backend",
+      to: "backend"
+    },
+    {
+      from: "../smart-assets",
+      to: "smart-assets"
+    }
+  ],
   mac: {
     icon: "assets/icons/logo.icns",
     target: [
