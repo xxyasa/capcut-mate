@@ -28,32 +28,11 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
-      - name: Download smart assets
-        shell: pwsh
-        env:
-          SMART_ASSETS_URL: ${{ secrets.SMART_ASSETS_URL }}
-        run: |
-          if (!$env:SMART_ASSETS_URL) {
-            throw "Missing GitHub secret SMART_ASSETS_URL. Upload smart-assets.zip to a private/internal URL and add it as a repository secret."
-          }
-          curl.exe -L --fail --retry 3 --output smart-assets.zip "$env:SMART_ASSETS_URL"
-          if (Test-Path "smart-assets") {
-            Remove-Item -Recurse -Force "smart-assets"
-          }
-          Expand-Archive -Path smart-assets.zip -DestinationPath .
-          if (!(Test-Path "smart-assets/manifest.json")) {
-            if (Test-Path "smart-assets-main/manifest.json") {
-              Move-Item smart-assets-main smart-assets
-            } else {
-              throw "Downloaded asset package must contain smart-assets/manifest.json."
-            }
-          }
-
       - name: Verify smart assets
         shell: pwsh
         run: |
           if (!(Test-Path "smart-assets/manifest.json")) {
-            throw "smart-assets/manifest.json not found."
+            throw "smart-assets/manifest.json not found. Commit smart-assets before running this workflow."
           }
           if (!(Test-Path "smart-assets/text_templates/文字模板2/key_value.json")) {
             throw "Text template draft not found in smart-assets."

@@ -1,0 +1,11 @@
+{
+    "date": "2025-07-21 04:07:12 +0000",
+    "author": "BitsAdmin",
+    "source": "release/19.5.0",
+    "branch": "release/19.5.0",
+    "commit": {
+        "id": "788356f5f59830efd8a4f049e1a142effcb8d33e",
+        "message": "Merge branch 'f/fengzicheng/19.5.0/js_ver_update' into 'release/19.5.0'"
+    },
+    "buildingTime": "2025-07-21 12:12:11"
+}

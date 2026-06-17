@@ -1,0 +1,11 @@
+{
+    "date": "2025-11-07 17:42:11 +0800",
+    "author": "root",
+    "source": "b/luoruchong/fix_only_lem_script_anim",
+    "branch": "release/20.2.0",
+    "commit": {
+        "id": "a7495d1d4bf1dd7fc3b820b5e97324ba8b37c49f",
+        "message": "Merge remote-tracking branch 'origin/release/20.2.0' into b/luoruchong/fix_only_lem_script_anim"
+    },
+    "buildingTime": "2025-11-07 17:46:34"
+}

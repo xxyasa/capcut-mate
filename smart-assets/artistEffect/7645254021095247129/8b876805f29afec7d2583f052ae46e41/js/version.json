@@ -1,0 +1,11 @@
+{
+    "date": "2026-04-03 22:56:43 +0800",
+    "author": "wujiajie.hogaki",
+    "source": "b/kangfang/21.2.0/cube_rotate",
+    "branch": "release/21.2.0",
+    "commit": {
+        "id": "deca3a94fdd1406389731b640bb97e11a9b89777",
+        "message": "fix(textAnim): fix set textSelector fail issue in text animaition; set rootPath for RDG resources."
+    },
+    "buildingTime": "2026-04-07 12:47:37"
+}

@@ -1,0 +1,10 @@
+{
+    "date": "2024-11-01 16:38:21 +0800",
+    "author": "limingzhu",
+    "branch": "release/17.7.0",
+    "commit": {
+        "id": "0d9aaf8ee3d583430eafaf6db17e2a7ead198442",
+        "message": "bugfix: lua caption animation support keyword different fill style"
+    },
+    "buildingTime": "2024-11-01 18:57:46"
+}

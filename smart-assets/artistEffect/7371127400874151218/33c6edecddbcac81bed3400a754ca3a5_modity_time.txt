@@ -1,0 +1,8 @@
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7371127400874151218/33c6edecddbcac81bed3400a754ca3a5/config.json, 1781662911
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7371127400874151218/33c6edecddbcac81bed3400a754ca3a5/content.json, 1781662911
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7371127400874151218/33c6edecddbcac81bed3400a754ca3a5/extra.json, 1781662911
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7371127400874151218/33c6edecddbcac81bed3400a754ca3a5/js/main.js, 1781662911
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7371127400874151218/33c6edecddbcac81bed3400a754ca3a5/js/template/template.js, 1781662911
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7371127400874151218/33c6edecddbcac81bed3400a754ca3a5/local/4a4c95a5-6921-4598-97ef-af9f744307ae.png, 1781662911
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7371127400874151218/33c6edecddbcac81bed3400a754ca3a5/local/a8d18f49-82a1-4b16-bb88-04fe04e93637.png, 1781662911
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7371127400874151218/33c6edecddbcac81bed3400a754ca3a5/local/cbaeeb4d-96bc-4c21-8a8f-9741b96a74fd.png, 1781662911

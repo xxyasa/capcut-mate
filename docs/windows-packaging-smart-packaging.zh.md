@@ -694,31 +694,13 @@ desktop-client/dist/capcut-mate-windows-x64-green.zip
 .github/workflows/build-windows.yml
 ```
 
-出于内部素材安全考虑，`smart-assets/` 不提交到 GitHub 仓库。需要先在本地生成并压缩素材包：
-
-```powershell
-Compress-Archive -Path smart-assets -DestinationPath smart-assets.zip -Force
-```
-
-或在 macOS/Linux 上：
-
-```bash
-zip -r smart-assets.zip smart-assets
-```
-
-然后把 `smart-assets.zip` 上传到公司内部可访问地址，例如：
-
-- 私有对象存储临时下载链接。
-- 私有 GitHub Release asset。
-- 公司网盘直链。
-- 内部制品库。
-
-在 GitHub 仓库中配置 Secret：
+当前方案把 `smart-assets/` 直接提交到 GitHub 仓库。运行 Actions 前需要确认仓库中存在：
 
 ```text
-Settings -> Secrets and variables -> Actions -> New repository secret
-Name: SMART_ASSETS_URL
-Value: <smart-assets.zip 的私有下载地址>
+smart-assets/manifest.json
+smart-assets/text_templates/文字模板2/key_value.json
+smart-assets/sound_effects/音效库2/key_value.json
+smart-assets/music/downLoadcfg
 ```
 
 配置完成后手动触发：

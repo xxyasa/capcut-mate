@@ -1,0 +1,11 @@
+{
+    "date": "2026-03-04 16:59:02 +0800",
+    "author": "fengzicheng",
+    "source": "b/fengzicheng/21.0.0/js_anim_reset",
+    "branch": "release/21.0.0",
+    "commit": {
+        "id": "8f712b18330160cdf4344bdc31a3edfed3dc960f",
+        "message": "fix: fix richtext reset animation logic"
+    },
+    "buildingTime": "2026-03-04 19:10:01"
+}
