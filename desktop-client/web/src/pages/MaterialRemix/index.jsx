@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
 import { toast } from "react-toastify";
 import electronService from "../../services/electronService";
@@ -15,7 +15,7 @@ function splitLines(value) {
 }
 
 function MaterialRemixPage() {
-  const [apiBase, setApiBase] = useState(DEFAULT_API_BASE);
+  const [apiBase, setApiBase] = useState("");
   const [videoUrls, setVideoUrls] = useState("");
   const [bgmUrls, setBgmUrls] = useState("");
   const [outputCount, setOutputCount] = useState(3);
@@ -35,8 +35,24 @@ function MaterialRemixPage() {
     mute_original: true,
   });
 
+  useEffect(() => {
+    const loadRuntimeConfig = async () => {
+      try {
+        const config = await window.electronAPI?.getRuntimeConfig?.();
+        setApiBase(config?.apiBase || DEFAULT_API_BASE);
+      } catch (error) {
+        setApiBase(DEFAULT_API_BASE);
+      }
+    };
+    loadRuntimeConfig();
+  }, []);
+
   const handleGenerate = async () => {
     const payload = buildPayload();
+    if (!apiBase) {
+      toast.warn("后端服务地址还在初始化，请稍后再试");
+      return;
+    }
     if (payload.video_urls.length === 0) {
       toast.warn("请至少输入一个视频素材 URL");
       return;

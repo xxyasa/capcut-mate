@@ -605,7 +605,18 @@ def _prepare_video(video: SmartPackagingVideoInput) -> PreparedVideo:
         local_video_path = video.local_video_path
         cleanup_local_file = False
     else:
-        local_video_path = download(str(video.video_url), config.TEMP_DIR)
+        logger.info(
+            "smart_packaging remote video download start, timeout=%ss, retry=%s, url=%s",
+            config.SMART_PACKAGING_VIDEO_DOWNLOAD_TIMEOUT,
+            config.SMART_PACKAGING_VIDEO_DOWNLOAD_RETRY,
+            video.video_url,
+        )
+        local_video_path = download(
+            str(video.video_url),
+            config.TEMP_DIR,
+            timeout=config.SMART_PACKAGING_VIDEO_DOWNLOAD_TIMEOUT,
+            retry=config.SMART_PACKAGING_VIDEO_DOWNLOAD_RETRY,
+        )
         cleanup_local_file = True
 
     duration = get_media_duration(local_video_path)

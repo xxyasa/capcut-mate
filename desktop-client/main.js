@@ -95,6 +95,8 @@ async function startBackend() {
   const assetsDir = getResourcePath('smart-assets');
   const { command, args } = getPythonBackendCommand();
   const backendLog = pipeBackendLogs(path.join(app.getPath('userData'), 'logs', 'backend.log'));
+  const backendDataDir = path.join(app.getPath('userData'), 'backend-data');
+  fs.mkdirSync(backendDataDir, { recursive: true });
 
   runtimeConfig = {
     apiBase: `${baseUrl}/openapi/capcut-mate/v1`,
@@ -106,6 +108,7 @@ async function startBackend() {
     env: {
       ...process.env,
       SMART_PACKAGING_ASSETS_DIR: assetsDir,
+      CAPCUT_MATE_DATA_DIR: backendDataDir,
       JIANYING_TEXT_TEMPLATE_DRAFT_DIR: path.join(assetsDir, 'text_templates', '文字模板2'),
       JIANYING_ARTIST_EFFECT_CACHE_DIR: path.join(assetsDir, 'artistEffect'),
       JIANYING_SOUND_DRAFT_DIR: path.join(assetsDir, 'sound_effects', '音效库2'),

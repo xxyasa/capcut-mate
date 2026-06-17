@@ -1,7 +1,65 @@
 import subprocess
 import os
+import shutil
 from typing import Optional
 from src.utils.logger import logger
+
+
+def _get_duration_with_ffprobe(file_path: str) -> Optional[int]:
+    ffprobe_path = shutil.which("ffprobe")
+    if not ffprobe_path:
+        logger.info("ffprobe not found, fallback to pymediainfo")
+        return None
+
+    cmd = [
+        ffprobe_path,
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        file_path
+    ]
+
+    result = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=30
+    )
+
+    if result.returncode != 0:
+        logger.error(f"ffprobe 执行失败: {result.stderr}")
+        return None
+
+    duration_str = result.stdout.strip()
+    if not duration_str:
+        logger.warning(f"ffprobe 未能获取到文件时长: {file_path}")
+        return None
+
+    return int(float(duration_str) * 1_000_000)
+
+
+def _get_duration_with_pymediainfo(file_path: str) -> Optional[int]:
+    try:
+        from pymediainfo import MediaInfo
+    except Exception as exc:
+        logger.error(f"pymediainfo 不可用: {exc}")
+        return None
+
+    try:
+        media_info = MediaInfo.parse(file_path)
+    except Exception as exc:
+        logger.error(f"pymediainfo 解析失败: {exc}")
+        return None
+
+    for track_type in ("Video", "Audio", "General"):
+        for track in media_info.tracks:
+            if track.track_type != track_type:
+                continue
+            duration_ms = getattr(track, "duration", None)
+            if duration_ms:
+                return int(float(duration_ms) * 1000)
+    return None
 
 
 def get_media_duration(file_path: str) -> Optional[int]:
@@ -24,41 +82,13 @@ def get_media_duration(file_path: str) -> Optional[int]:
         if not os.path.exists(file_path):
             logger.warning(f"文件不存在: {file_path}")
             return None
-            
-        # 使用 ffprobe 获取媒体信息
-        cmd = [
-            "ffprobe",
-            "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            file_path
-        ]
-        
-        # 执行命令并获取输出
-        result = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=30  # 设置超时时间
-        )
-        
-        # 检查命令执行是否成功
-        if result.returncode != 0:
-            logger.error(f"ffprobe 执行失败: {result.stderr}")
-            return None
-            
-        # 解析输出
-        duration_str = result.stdout.strip()
-        if not duration_str:
+
+        duration_microseconds = _get_duration_with_ffprobe(file_path)
+        if duration_microseconds is None:
+            duration_microseconds = _get_duration_with_pymediainfo(file_path)
+        if duration_microseconds is None:
             logger.warning(f"未能获取到文件时长: {file_path}")
             return None
-            
-        # 转换为浮点数（秒）
-        duration_seconds = float(duration_str)
-        
-        # 转换为微秒
-        duration_microseconds = int(duration_seconds * 1_000_000)
         
         logger.info(f"文件 {file_path} 的时长: {duration_microseconds} 微秒")
         return duration_microseconds

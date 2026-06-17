@@ -70,7 +70,7 @@ function buildVideoItems(videoUrls, localVideoPaths, captionLines) {
 }
 
 function SmartPackagingPage() {
-  const [apiBase, setApiBase] = useState(DEFAULT_API_BASE);
+  const [apiBase, setApiBase] = useState("");
   const [videoUrls, setVideoUrls] = useState("");
   const [localVideoPaths, setLocalVideoPaths] = useState([]);
   const [captionTexts, setCaptionTexts] = useState("");
@@ -208,25 +208,30 @@ function SmartPackagingPage() {
         const config = await window.electronAPI?.getRuntimeConfig?.();
         if (config?.apiBase) {
           setApiBase(config.apiBase);
+        } else {
+          setApiBase(DEFAULT_API_BASE);
         }
       } catch (error) {
-        // Browser mode keeps using DEFAULT_API_BASE.
+        setApiBase(DEFAULT_API_BASE);
       }
     };
     loadRuntimeConfig();
   }, []);
 
   useEffect(() => {
+    if (!apiBase) return;
     loadTextEffectCatalog();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiBase]);
 
   useEffect(() => {
+    if (!apiBase) return;
     loadTextTemplateCatalog();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiBase]);
 
   useEffect(() => {
+    if (!apiBase) return;
     loadSoundEffectCatalog();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiBase]);

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from typing import Any, Dict, List
@@ -133,8 +134,16 @@ def _request_openai_compatible(local_audio_path: str, asr: SmartPackagingAsrConf
 
 def _extract_audio_for_asr(local_video_path: str, temp_dir: str) -> str:
     local_audio_path = os.path.join(temp_dir, "asr_audio.mp3")
+    ffmpeg_exe = shutil.which("ffmpeg")
+    if not ffmpeg_exe:
+        try:
+            import imageio_ffmpeg
+
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            ffmpeg_exe = "ffmpeg"
     cmd = [
-        "ffmpeg",
+        ffmpeg_exe,
         "-y",
         "-i",
         local_video_path,
