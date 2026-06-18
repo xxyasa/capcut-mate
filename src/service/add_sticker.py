@@ -1,14 +1,44 @@
 from src.utils.logger import logger
 from src.pyJianYingDraft import ScriptFile, trange, StickerSegment, ClipSettings
 import src.pyJianYingDraft as draft
+from src.pyJianYingDraft.animation import SegmentAnimations, VideoAnimation
+from src.pyJianYingDraft.metadata import IntroType
 from src.utils.draft_cache import DRAFT_CACHE
 from exceptions import CustomException, CustomError
 import os
 from src.utils import helper
 import config
 import asyncio
-from typing import Tuple
+from typing import Optional, Tuple
 from src.utils.draft_lock_manager import DraftLockManager
+
+
+def _map_sticker_intro_animation(animation_name: str):
+    for attr_name in dir(IntroType):
+        attr = getattr(IntroType, attr_name)
+        if isinstance(attr, IntroType) and attr.value.title == animation_name:
+            return attr
+    return None
+
+
+def _add_sticker_intro_animation(
+    sticker_segment: StickerSegment,
+    animation_name: Optional[str],
+    duration: Optional[int],
+) -> None:
+    if not animation_name:
+        return
+    intro_enum = _map_sticker_intro_animation(animation_name)
+    if not intro_enum:
+        logger.warning(f"Sticker in animation '{animation_name}' not found in available video intro animations")
+        intro_enum = _map_sticker_intro_animation("渐显")
+        if not intro_enum:
+            return
+    animation_duration = int(duration) if duration is not None and duration != "" else intro_enum.value.duration
+    if sticker_segment.animations_instance is None:
+        sticker_segment.animations_instance = SegmentAnimations()
+        sticker_segment.extra_material_refs.append(sticker_segment.animations_instance.animation_id)
+    sticker_segment.animations_instance.add_animation(VideoAnimation(intro_enum, 0, animation_duration))
 
 
 def add_sticker(
@@ -18,7 +48,9 @@ def add_sticker(
     end: int,
     scale: float = 1.0,
     transform_x: int = 0,
-    transform_y: int = 0
+    transform_y: int = 0,
+    in_animation: Optional[str] = None,
+    in_animation_duration: Optional[int] = None,
 ) -> Tuple[str, str, str, str, int]:
     """
     添加贴纸到剪映草稿的业务逻辑
@@ -94,6 +126,7 @@ def add_sticker(
             target_timerange=trange(start=start, duration=duration),
             clip_settings=clip_settings
         )
+        _add_sticker_intro_animation(sticker_segment, in_animation, in_animation_duration)
         logger.info(f"Created sticker segment, segment_id: {sticker_segment.segment_id}, resource_id: {sticker_id}")
     except Exception as e:
         logger.error(f"Failed to create sticker segment: {str(e)}")
@@ -145,6 +178,8 @@ async def add_sticker_async(
     scale: float = 1.0,
     transform_x: int = 0,
     transform_y: int = 0,
+    in_animation: Optional[str] = None,
+    in_animation_duration: Optional[int] = None,
     lock_timeout: float = 30.0
 ) -> Tuple[str, str, str, str, int]:
     """
@@ -208,7 +243,9 @@ async def add_sticker_async(
             end=end,
             scale=scale,
             transform_x=transform_x,
-            transform_y=transform_y
+            transform_y=transform_y,
+            in_animation=in_animation,
+            in_animation_duration=in_animation_duration,
         )
     finally:
         # 释放锁

@@ -1038,7 +1038,7 @@ function SmartPackagingPage() {
                 />
               </label>
               <label className="smart-field">
-                <span>重点花字入场动画池，每行一个</span>
+                <span>普通字幕/重点花字入场动画池，每行一个</span>
                 <textarea value={captionAnimations} onChange={(e) => setCaptionAnimations(e.target.value)} />
               </label>
               <label className="smart-field">

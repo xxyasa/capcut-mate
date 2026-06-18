@@ -738,6 +738,32 @@ def _append_applied(applied: List[str], name: str) -> None:
         applied.append(name)
 
 
+def _caption_source_index_map(captions: List[dict], source_index_offset: int) -> tuple[dict[int, int], int]:
+    if not captions:
+        return {}, 0
+
+    local_source_indexes = sorted(
+        {int(caption.get("_source_caption_index", index)) for index, caption in enumerate(captions)}
+    )
+    return {
+        source_index: source_index_offset + index
+        for index, source_index in enumerate(local_source_indexes)
+    }, len(local_source_indexes)
+
+
+def _globalize_caption_source_indexes(
+    captions: List[dict],
+    source_index_map: dict[int, int],
+) -> List[dict]:
+    result: List[dict] = []
+    for caption_index, caption in enumerate(captions):
+        source_index = int(caption.get("_source_caption_index", caption_index))
+        next_caption = dict(caption)
+        next_caption["_source_caption_index"] = source_index_map.get(source_index, source_index)
+        result.append(next_caption)
+    return result
+
+
 def _normalize_highlight_text(text: str, max_chars: int) -> str:
     cleaned = re.sub(r"\s+", "", str(text or ""))
     cleaned = re.sub(r"[，,。！？!?；;：:“”\"'、（）()\[\]【】《》<>]", "", cleaned)
@@ -1510,21 +1536,20 @@ def _choose_jianying_text_template_entry(
 
 
 class _RawTextTemplateAnimation:
-    def __init__(self, animation_data: dict, duration_scale: float, *, is_video_animation: bool = False):
+    def __init__(self, animation_data: dict, duration_scale: float):
         self.name = str(animation_data.get("anim_resource_id") or "")
         self.effect_id = str(animation_data.get("anim_resource_id") or "")
         self.resource_id = str(animation_data.get("anim_resource_id") or "")
         self.animation_type = _normalize_template_animation_type(animation_data.get("anim_type"))
         self.start = max(0, int(float(animation_data.get("anim_start_time") or 0) * 1_000_000 * duration_scale))
         self.duration = max(1, int(float(animation_data.get("duration") or 0) * 1_000_000 * duration_scale))
-        self.is_video_animation = is_video_animation
 
     def export_json(self) -> dict:
         return {
             "anim_adjust_params": None,
             "platform": "all",
-            "panel": "video" if self.is_video_animation else "",
-            "material_type": "video" if self.is_video_animation else "sticker",
+            "panel": "",
+            "material_type": "sticker",
             "name": self.name,
             "id": self.effect_id,
             "type": self.animation_type,
@@ -1546,13 +1571,10 @@ def _segment_animations_from_template(child: dict, duration_scale: float) -> Seg
     if not isinstance(anims, list) or not anims:
         return None
     segment_animations = SegmentAnimations()
-    is_video_animation = child.get("type") == "sticker"
     for anim in anims:
         if not isinstance(anim, dict) or not anim.get("anim_resource_id"):
             continue
-        segment_animations.animations.append(
-            _RawTextTemplateAnimation(anim, duration_scale, is_video_animation=is_video_animation)
-        )
+        segment_animations.animations.append(_RawTextTemplateAnimation(anim, duration_scale))
     if not segment_animations.animations:
         return None
     return segment_animations
@@ -2994,20 +3016,7 @@ async def smart_packaging(req: SmartPackagingRequest) -> SmartPackagingResponse:
 
             if req.caption.enabled:
                 captions = await asyncio.to_thread(_resolve_captions, prepared, req, randomizer)
-                local_source_count = len({int(caption.get("_source_caption_index", index)) for index, caption in enumerate(captions)})
                 if captions:
-                    local_source_indexes = sorted(
-                        {int(caption.get("_source_caption_index", index)) for index, caption in enumerate(captions)}
-                    )
-                    local_source_index_map = {source_index: source_index_offset + index for index, source_index in enumerate(local_source_indexes)}
-                    normalized_captions: List[dict] = []
-                    for caption_index, caption in enumerate(captions):
-                        source_index = int(caption.get("_source_caption_index", caption_index))
-                        next_caption = dict(caption)
-                        next_caption["_source_caption_index"] = local_source_index_map.get(source_index, source_index_offset + caption_index)
-                        normalized_captions.append(next_caption)
-                    captions = normalized_captions
-
                     plain_keyword_highlights = _build_plain_caption_keyword_highlights(captions, req)
                     highlight_captions = _build_highlight_captions(captions, req, randomizer, prepared.duration)
                     plain_captions = _apply_highlight_keywords_to_plain_captions(
@@ -3015,8 +3024,11 @@ async def smart_packaging(req: SmartPackagingRequest) -> SmartPackagingResponse:
                         plain_keyword_highlights,
                         req,
                     )
-                    global_plain_captions = _offset_timed_items(plain_captions, offset)
-                    global_highlight_captions = _offset_timed_items(highlight_captions, offset)
+                    source_index_map, local_source_count = _caption_source_index_map(captions, source_index_offset)
+                    global_plain_captions = _globalize_caption_source_indexes(plain_captions, source_index_map)
+                    global_highlight_captions = _globalize_caption_source_indexes(highlight_captions, source_index_map)
+                    global_plain_captions = _offset_timed_items(global_plain_captions, offset)
+                    global_highlight_captions = _offset_timed_items(global_highlight_captions, offset)
                     plain_caption_infos.extend(global_plain_captions)
 
                     if global_highlight_captions:
@@ -3039,7 +3051,10 @@ async def smart_packaging(req: SmartPackagingRequest) -> SmartPackagingResponse:
                         fallback_highlight_infos.extend(current_fallback_highlights)
                         highlight_audio_infos.extend(
                             _offset_timed_items(
-                                _build_highlight_audio_infos(highlight_captions, req, randomizer),
+                                _globalize_caption_source_indexes(
+                                    _build_highlight_audio_infos(highlight_captions, req, randomizer),
+                                    source_index_map,
+                                ),
                                 offset,
                             )
                         )
@@ -3050,7 +3065,7 @@ async def smart_packaging(req: SmartPackagingRequest) -> SmartPackagingResponse:
                             offset,
                         )
                     )
-                source_index_offset += local_source_count
+                    source_index_offset += local_source_count
 
             effect_infos.extend(_offset_timed_items(_build_effect_infos(prepared.duration, req, randomizer), offset))
             filter_infos.extend(_offset_timed_items(_build_filter_infos(prepared.duration, req, randomizer), offset))
@@ -3061,6 +3076,18 @@ async def smart_packaging(req: SmartPackagingRequest) -> SmartPackagingResponse:
                 video_infos=_stringify(video_infos),
             )
             _append_applied(applied, "video")
+
+            if template_highlight_infos:
+                for highlight, template_entry in template_highlight_infos:
+                    next_ids = (
+                        _add_text_template_layers_to_draft(draft_url, highlight, template_entry)
+                        if template_entry
+                        else []
+                    )
+                    if next_ids:
+                        highlight_segment_ids.extend(next_ids)
+                    else:
+                        fallback_highlight_infos.append(highlight)
 
             if base_audio_infos:
                 _, _, next_audio_ids = await add_audios_async(

@@ -111,13 +111,13 @@ def test_smart_packaging_builds_one_draft_per_video(monkeypatch):
 
     result = asyncio.run(smart_packaging_func(req))
 
-    assert len(result.drafts) == 2
-    assert len(created) == 2
-    assert len(video_calls) == 2
-    assert len(audio_calls) == 2
-    assert len(caption_calls) == 2
-    assert len(effect_calls) == 2
-    assert len(filter_calls) == 2
+    assert len(result.drafts) == 1
+    assert len(created) == 1
+    assert len(video_calls) == 1
+    assert len(audio_calls) == 1
+    assert len(caption_calls) == 1
+    assert len(effect_calls) == 1
+    assert len(filter_calls) == 1
     assert len(sticker_calls) == 2
     assert saved == [draft.draft_url for draft in result.drafts]
 
@@ -126,11 +126,17 @@ def test_smart_packaging_builds_one_draft_per_video(monkeypatch):
     assert first_video["start"] == 0
     assert first_video["end"] == 6_000_000
     assert first_video["volume"] == 0.0
+    second_video = video_calls[0][1][1]
+    assert second_video["video_url"] == "https://assets.example.com/b.mp4"
+    assert second_video["start"] == 6_000_000
+    assert second_video["end"] == 14_000_000
 
     first_captions = caption_calls[0][1]
-    assert [item["text"] for item in first_captions] == ["开场", "卖点"]
+    assert [item["text"] for item in first_captions] == ["开场", "卖点", "现成字幕"]
+    assert first_captions[2]["start"] == 6_000_000
+    assert first_captions[2]["end"] == 8_000_000
     assert all("text_effect" not in item for item in first_captions)
-    assert all("in_animation" not in item for item in first_captions)
+    assert all(item["in_animation"] == "入场A" for item in first_captions)
     assert caption_calls[0][2]["font_size"] == 18
     assert caption_calls[0][2]["transform_y"] == -1500.0
 
@@ -140,7 +146,9 @@ def test_smart_packaging_builds_one_draft_per_video(monkeypatch):
     assert filter_calls[0][1][0]["filter_title"] == "滤镜A"
     assert filter_calls[0][1][0]["intensity"] == 66
     assert sticker_calls[0][1]["sticker_id"] == "sticker-star"
+    assert sticker_calls[0][1]["in_animation"] == "入场A"
     assert result.drafts[0].sticker_segment_ids == ["sticker-segment-1"]
+    assert result.drafts[0].duration == 14_000_000
     assert result.drafts[0].applied == ["video", "audio", "captions", "stickers", "effects", "filters"]
 
 

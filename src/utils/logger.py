@@ -29,7 +29,10 @@ class RelativePathFormatter(logging.Formatter):
         self.project_root = project_root or os.getcwd()
 
     def format(self, record: logging.LogRecord) -> str:
-        record.rel_path = os.path.relpath(record.pathname, self.project_root)
+        try:
+            record.rel_path = os.path.relpath(record.pathname, self.project_root)
+        except ValueError:
+            record.rel_path = record.pathname
         return super().format(record)
 
 LOGGING_CONFIG = {

@@ -360,6 +360,9 @@ class ScriptFile:
 
             self.materials.speeds.append(segment.speed)
         elif isinstance(segment, StickerSegment):
+            # 出入场/循环动画，剪映文字模板拆出的贴纸也会挂在这里
+            if (segment.animations_instance is not None) and (segment.animations_instance not in self.materials):
+                self.materials.animations.append(segment.animations_instance)
             self.materials.stickers.append(segment.export_material())
         elif isinstance(segment, AudioSegment):
             # 淡入淡出

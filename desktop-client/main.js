@@ -53,6 +53,20 @@ function getPythonBackendCommand() {
     };
   }
 
+  if (process.env.CAPCUT_MATE_PYTHON) {
+    return {
+      command: process.env.CAPCUT_MATE_PYTHON,
+      args: [path.join(__dirname, '..', 'main.py')]
+    };
+  }
+
+  if (process.env.NODE_ENV === 'development') {
+    return {
+      command: process.platform === 'win32' ? 'python' : 'python3',
+      args: [path.join(__dirname, '..', 'main.py')]
+    };
+  }
+
   const windowsPython = path.join(__dirname, '..', '.venv', 'Scripts', 'python.exe');
   const posixPython = path.join(__dirname, '..', '.venv', 'bin', 'python');
   const command = fs.existsSync(windowsPython)
