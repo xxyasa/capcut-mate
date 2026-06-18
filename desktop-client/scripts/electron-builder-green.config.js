@@ -1,6 +1,6 @@
 module.exports = {
-  appId: "com.gogoshine.capcutmate",
-  productName: "CapCut-Mate",
+  appId: "com.autocutmix.app",
+  productName: "极易智能包装小助手",
   directories: {
     output: "dist"
   },

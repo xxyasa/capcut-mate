@@ -11,6 +11,62 @@
   margin-bottom: 16px;
 }
 
+.smart-toolbar-bottom {
+  align-items: flex-start;
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.smart-toolbar-info {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.smart-toolbar-actions,
+.smart-template-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.smart-template-controls select {
+  min-width: 180px;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #263238;
+  background: #fff;
+  font-size: 14px;
+}
+
+.smart-template-limit {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.smart-template-save-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.smart-template-save-form input {
+  width: 168px;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #263238;
+  background: #fff;
+  font-size: 14px;
+}
+
 .smart-summary {
   margin-top: 4px;
   color: #64748b;
@@ -455,6 +511,15 @@
   .smart-result {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .smart-toolbar-actions,
+  .smart-template-controls {
+    width: 100%;
+  }
+
+  .smart-template-controls select {
+    width: 100%;
   }
 
   .smart-grid,

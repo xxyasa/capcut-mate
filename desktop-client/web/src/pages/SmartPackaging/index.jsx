@@ -6,6 +6,9 @@ import electronService from "../../services/electronService";
 import "./index.less";
 
 const DEFAULT_API_BASE = "http://localhost:30000/openapi/capcut-mate/v1";
+const SMART_TEMPLATE_STORAGE_KEY = "smartPackagingTemplates";
+const MAX_VIDEO_COUNT = 20;
+const MAX_TEMPLATE_COUNT = 5;
 const DEFAULT_ASR_ENDPOINT = "https://model-api.ecmax.cn/v1/audio/transcriptions";
 const DEFAULT_ASR_MODEL = "whisper-large-v3";
 const DEFAULT_LLM_ENDPOINT = "https://model-api.ecmax.cn/v1/chat/completions";
@@ -39,6 +42,43 @@ const DEFAULT_HIGHLIGHT_SOUND_EFFECTS = [
   "叮",
 ];
 const EXCLUDED_TEXT_TEMPLATE_KEYWORDS = ["疯狂安利", "实用满分", "超值好物", "简约盐系穿搭"];
+
+const DEFAULT_SMART_TEMPLATE_CONFIG = {
+  enableAsr: true,
+  asrEndpoint: DEFAULT_ASR_ENDPOINT,
+  asrApiKey: "",
+  asrModel: DEFAULT_ASR_MODEL,
+  asrLanguage: "zh",
+  timestampGranularity: "word_segment",
+  enableLlmCaption: true,
+  llmEndpoint: DEFAULT_LLM_ENDPOINT,
+  llmModel: DEFAULT_LLM_MODEL,
+  domainTerms: DEFAULT_DOMAIN_TERMS.join("\n"),
+  style: "dynamic",
+  muteOriginal: false,
+  fontSize: 12,
+  captionTransformY: PLAIN_CAPTION_TRANSFORM_Y,
+  captionKeywordColor: "#ffe600",
+  maxCaptionChars: 10,
+  highlightEnabled: true,
+  highlightFontSize: 28,
+  jianyingTextTemplateDraftDir: DEFAULT_JIANYING_TEXT_TEMPLATE_DRAFT_DIR,
+  textTemplateNames: "",
+  textEffects: "黄字橙光花字\n动感黄色发光故障风花字\n红金立体发光花字",
+  captionAnimations: "弹入\n向上滑动",
+  loopAnimations: "",
+  effectTitles: "抖动\n模糊\n复古DV",
+  effectCount: 0,
+  enableStickers: true,
+  stickerCount: 0,
+  stickerKeywords: "",
+  filterTitles: "亮夏\n初恋\n清透自然",
+  filterIntensity: 80,
+  bgmUrls: "",
+  soundEffectUrls: "",
+  jianyingSoundDraftDir: DEFAULT_JIANYING_SOUND_DRAFT_DIR,
+  highlightSoundEffects: DEFAULT_HIGHLIGHT_SOUND_EFFECTS.join("\n"),
+};
 
 function splitLines(value) {
   return value
@@ -74,50 +114,56 @@ function SmartPackagingPage() {
   const [videoUrls, setVideoUrls] = useState("");
   const [localVideoPaths, setLocalVideoPaths] = useState([]);
   const [captionTexts, setCaptionTexts] = useState("");
-  const [enableAsr, setEnableAsr] = useState(true);
-  const [asrEndpoint, setAsrEndpoint] = useState(DEFAULT_ASR_ENDPOINT);
-  const [asrApiKey, setAsrApiKey] = useState("");
-  const [asrModel, setAsrModel] = useState(DEFAULT_ASR_MODEL);
-  const [asrLanguage, setAsrLanguage] = useState("zh");
-  const [timestampGranularity, setTimestampGranularity] = useState("word_segment");
-  const [enableLlmCaption, setEnableLlmCaption] = useState(true);
-  const [llmEndpoint, setLlmEndpoint] = useState(DEFAULT_LLM_ENDPOINT);
-  const [llmModel, setLlmModel] = useState(DEFAULT_LLM_MODEL);
-  const [domainTerms, setDomainTerms] = useState(DEFAULT_DOMAIN_TERMS.join("\n"));
-  const [style, setStyle] = useState("dynamic");
-  const [muteOriginal, setMuteOriginal] = useState(false);
-  const [fontSize, setFontSize] = useState(12);
-  const [captionTransformY, setCaptionTransformY] = useState(PLAIN_CAPTION_TRANSFORM_Y);
-  const [captionKeywordColor, setCaptionKeywordColor] = useState("#ffe600");
-  const [maxCaptionChars, setMaxCaptionChars] = useState(10);
-  const [highlightEnabled, setHighlightEnabled] = useState(true);
-  const [highlightFontSize, setHighlightFontSize] = useState(28);
-  const [jianyingTextTemplateDraftDir, setJianyingTextTemplateDraftDir] = useState(DEFAULT_JIANYING_TEXT_TEMPLATE_DRAFT_DIR);
-  const [textTemplateNames, setTextTemplateNames] = useState("");
+  const [enableAsr, setEnableAsr] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.enableAsr);
+  const [asrEndpoint, setAsrEndpoint] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.asrEndpoint);
+  const [asrApiKey, setAsrApiKey] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.asrApiKey);
+  const [asrModel, setAsrModel] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.asrModel);
+  const [asrLanguage, setAsrLanguage] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.asrLanguage);
+  const [timestampGranularity, setTimestampGranularity] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.timestampGranularity);
+  const [enableLlmCaption, setEnableLlmCaption] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.enableLlmCaption);
+  const [llmEndpoint, setLlmEndpoint] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.llmEndpoint);
+  const [llmModel, setLlmModel] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.llmModel);
+  const [domainTerms, setDomainTerms] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.domainTerms);
+  const [style, setStyle] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.style);
+  const [muteOriginal, setMuteOriginal] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.muteOriginal);
+  const [fontSize, setFontSize] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.fontSize);
+  const [captionTransformY, setCaptionTransformY] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.captionTransformY);
+  const [captionKeywordColor, setCaptionKeywordColor] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.captionKeywordColor);
+  const [maxCaptionChars, setMaxCaptionChars] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.maxCaptionChars);
+  const [highlightEnabled, setHighlightEnabled] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.highlightEnabled);
+  const [highlightFontSize, setHighlightFontSize] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.highlightFontSize);
+  const [jianyingTextTemplateDraftDir, setJianyingTextTemplateDraftDir] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.jianyingTextTemplateDraftDir);
+  const [textTemplateNames, setTextTemplateNames] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.textTemplateNames);
   const [textTemplateCatalog, setTextTemplateCatalog] = useState([]);
   const [isLoadingTextTemplates, setIsLoadingTextTemplates] = useState(false);
-  const [textEffects, setTextEffects] = useState("黄字橙光花字\n动感黄色发光故障风花字\n红金立体发光花字");
+  const [textEffects, setTextEffects] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.textEffects);
   const [textEffectCatalog, setTextEffectCatalog] = useState([]);
   const [textEffectQuery, setTextEffectQuery] = useState("");
   const [isLoadingTextEffects, setIsLoadingTextEffects] = useState(false);
-  const [captionAnimations, setCaptionAnimations] = useState("弹入\n向上滑动");
-  const [loopAnimations, setLoopAnimations] = useState("");
-  const [effectTitles, setEffectTitles] = useState("抖动\n模糊\n复古DV");
-  const [effectCount, setEffectCount] = useState(0);
-  const [enableStickers, setEnableStickers] = useState(true);
-  const [stickerCount, setStickerCount] = useState(0);
-  const [stickerKeywords, setStickerKeywords] = useState("");
-  const [filterTitles, setFilterTitles] = useState("亮夏\n初恋\n清透自然");
-  const [filterIntensity, setFilterIntensity] = useState(80);
-  const [bgmUrls, setBgmUrls] = useState("");
-  const [soundEffectUrls, setSoundEffectUrls] = useState("");
-  const [jianyingSoundDraftDir, setJianyingSoundDraftDir] = useState(DEFAULT_JIANYING_SOUND_DRAFT_DIR);
-  const [highlightSoundEffects, setHighlightSoundEffects] = useState(DEFAULT_HIGHLIGHT_SOUND_EFFECTS.join("\n"));
+  const [captionAnimations, setCaptionAnimations] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.captionAnimations);
+  const [loopAnimations, setLoopAnimations] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.loopAnimations);
+  const [effectTitles, setEffectTitles] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.effectTitles);
+  const [effectCount, setEffectCount] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.effectCount);
+  const [enableStickers, setEnableStickers] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.enableStickers);
+  const [stickerCount, setStickerCount] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.stickerCount);
+  const [stickerKeywords, setStickerKeywords] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.stickerKeywords);
+  const [filterTitles, setFilterTitles] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.filterTitles);
+  const [filterIntensity, setFilterIntensity] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.filterIntensity);
+  const [bgmUrls, setBgmUrls] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.bgmUrls);
+  const [soundEffectUrls, setSoundEffectUrls] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.soundEffectUrls);
+  const [jianyingSoundDraftDir, setJianyingSoundDraftDir] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.jianyingSoundDraftDir);
+  const [highlightSoundEffects, setHighlightSoundEffects] = useState(DEFAULT_SMART_TEMPLATE_CONFIG.highlightSoundEffects);
   const [soundEffectCatalog, setSoundEffectCatalog] = useState([]);
   const [isLoadingSoundEffects, setIsLoadingSoundEffects] = useState(false);
   const [playingSoundName, setPlayingSoundName] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [drafts, setDrafts] = useState([]);
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [isSaveAsTemplateOpen, setIsSaveAsTemplateOpen] = useState(false);
+  const [saveAsTemplateName, setSaveAsTemplateName] = useState("");
+  const [isImportingAll, setIsImportingAll] = useState(false);
+  const [importingDraftUrls, setImportingDraftUrls] = useState([]);
 
   const remoteVideoCount = useMemo(() => splitLines(videoUrls).length, [videoUrls]);
   const videoCount = remoteVideoCount + localVideoPaths.length;
@@ -140,6 +186,173 @@ function SmartPackagingPage() {
       .slice(0, 48);
   }, [textEffectCatalog, textEffectQuery]);
 
+  const persistTemplates = (nextTemplates) => {
+    setTemplates(nextTemplates);
+    localStorage.setItem(SMART_TEMPLATE_STORAGE_KEY, JSON.stringify(nextTemplates));
+  };
+
+  const getCurrentTemplateConfig = () => ({
+    enableAsr,
+    asrEndpoint,
+    asrApiKey,
+    asrModel,
+    asrLanguage,
+    timestampGranularity,
+    enableLlmCaption,
+    llmEndpoint,
+    llmModel,
+    domainTerms,
+    style,
+    muteOriginal,
+    fontSize,
+    captionTransformY,
+    captionKeywordColor,
+    maxCaptionChars,
+    highlightEnabled,
+    highlightFontSize,
+    jianyingTextTemplateDraftDir,
+    textTemplateNames,
+    textEffects,
+    captionAnimations,
+    loopAnimations,
+    effectTitles,
+    effectCount,
+    enableStickers,
+    stickerCount,
+    stickerKeywords,
+    filterTitles,
+    filterIntensity,
+    bgmUrls,
+    soundEffectUrls,
+    jianyingSoundDraftDir,
+    highlightSoundEffects,
+  });
+
+  const applyTemplateConfig = (config = {}) => {
+    const next = { ...DEFAULT_SMART_TEMPLATE_CONFIG, ...config };
+    setEnableAsr(next.enableAsr);
+    setAsrEndpoint(next.asrEndpoint);
+    setAsrApiKey(next.asrApiKey);
+    setAsrModel(next.asrModel);
+    setAsrLanguage(next.asrLanguage);
+    setTimestampGranularity(next.timestampGranularity);
+    setEnableLlmCaption(next.enableLlmCaption);
+    setLlmEndpoint(next.llmEndpoint);
+    setLlmModel(next.llmModel);
+    setDomainTerms(next.domainTerms);
+    setStyle(next.style);
+    setMuteOriginal(next.muteOriginal);
+    setFontSize(next.fontSize);
+    setCaptionTransformY(next.captionTransformY);
+    setCaptionKeywordColor(next.captionKeywordColor);
+    setMaxCaptionChars(next.maxCaptionChars);
+    setHighlightEnabled(next.highlightEnabled);
+    setHighlightFontSize(next.highlightFontSize);
+    setJianyingTextTemplateDraftDir(next.jianyingTextTemplateDraftDir);
+    setTextTemplateNames(next.textTemplateNames);
+    setTextEffects(next.textEffects);
+    setCaptionAnimations(next.captionAnimations);
+    setLoopAnimations(next.loopAnimations);
+    setEffectTitles(next.effectTitles);
+    setEffectCount(next.effectCount);
+    setEnableStickers(next.enableStickers);
+    setStickerCount(next.stickerCount);
+    setStickerKeywords(next.stickerKeywords);
+    setFilterTitles(next.filterTitles);
+    setFilterIntensity(next.filterIntensity);
+    setBgmUrls(next.bgmUrls);
+    setSoundEffectUrls(next.soundEffectUrls);
+    setJianyingSoundDraftDir(next.jianyingSoundDraftDir);
+    setHighlightSoundEffects(next.highlightSoundEffects);
+  };
+
+  const createDefaultTemplates = () => ([
+    {
+      id: "default",
+      name: "初始模板",
+      config: DEFAULT_SMART_TEMPLATE_CONFIG,
+    },
+  ]);
+
+  const handleTemplateChange = (templateId) => {
+    setSelectedTemplateId(templateId);
+    const template = templates.find((item) => item.id === templateId);
+    if (template) {
+      applyTemplateConfig(template.config);
+      toast.success(`已应用模板：${template.name}`);
+    }
+  };
+
+  const handleSaveSelectedTemplate = () => {
+    if (!selectedTemplateId) {
+      toast.warn("请先选择一个模板");
+      return;
+    }
+    const nextTemplates = templates.map((item) => (
+      item.id === selectedTemplateId
+        ? { ...item, config: getCurrentTemplateConfig() }
+        : item
+    ));
+    persistTemplates(nextTemplates);
+    toast.success("模板已保存");
+  };
+
+  const handleSaveAsTemplate = () => {
+    if (templates.length >= MAX_TEMPLATE_COUNT) {
+      toast.warn(`最多只能保存 ${MAX_TEMPLATE_COUNT} 个模板`);
+      return;
+    }
+    const nextIndex = templates.length + 1;
+    setSaveAsTemplateName(`模板 ${nextIndex}`);
+    setIsSaveAsTemplateOpen(true);
+  };
+
+  const handleCreateTemplate = () => {
+    const trimmedName = String(saveAsTemplateName || "").trim();
+    if (!trimmedName) {
+      toast.warn("请输入模板名称");
+      return;
+    }
+    if (templates.some((item) => item.name === trimmedName)) {
+      toast.warn("模板名称已存在");
+      return;
+    }
+    const newTemplate = {
+      id: `template-${Date.now()}`,
+      name: trimmedName,
+      config: getCurrentTemplateConfig(),
+    };
+    const nextTemplates = [...templates, newTemplate].slice(0, MAX_TEMPLATE_COUNT);
+    persistTemplates(nextTemplates);
+    setSelectedTemplateId(newTemplate.id);
+    setIsSaveAsTemplateOpen(false);
+    setSaveAsTemplateName("");
+    toast.success(`已保存模板：${trimmedName}`);
+  };
+
+  const handleDeleteTemplate = () => {
+    if (!selectedTemplateId) {
+      toast.warn("请先选择一个模板");
+      return;
+    }
+    if (templates.length <= 1) {
+      toast.warn("至少保留一个模板");
+      return;
+    }
+    const template = templates.find((item) => item.id === selectedTemplateId);
+    if (!window.confirm(`确定删除模板「${template?.name || ""}」吗？`)) {
+      return;
+    }
+    const nextTemplates = templates.filter((item) => item.id !== selectedTemplateId);
+    persistTemplates(nextTemplates);
+    const nextSelectedId = nextTemplates[0]?.id || "";
+    setSelectedTemplateId(nextSelectedId);
+    if (nextTemplates[0]) {
+      applyTemplateConfig(nextTemplates[0].config);
+    }
+    toast.success("模板已删除");
+  };
+
   const loadTextEffectCatalog = async () => {
     setIsLoadingTextEffects(true);
     try {
@@ -157,7 +370,7 @@ function SmartPackagingPage() {
     }
   };
 
-  const loadTextTemplateCatalog = async () => {
+  const loadTextTemplateCatalog = async (syncSelection = false) => {
     setIsLoadingTextTemplates(true);
     try {
       const response = await axios.post(`${apiBase}/smart_packaging/text_templates`, {
@@ -169,10 +382,12 @@ function SmartPackagingPage() {
         return;
       }
       setTextTemplateCatalog(templates);
-      setTextTemplateNames(templates
-        .filter((item) => !EXCLUDED_TEXT_TEMPLATE_KEYWORDS.some((keyword) => item.name.includes(keyword)))
-        .map((item) => item.name)
-        .join("\n"));
+      if (syncSelection) {
+        setTextTemplateNames(templates
+          .filter((item) => !EXCLUDED_TEXT_TEMPLATE_KEYWORDS.some((keyword) => item.name.includes(keyword)))
+          .map((item) => item.name)
+          .join("\n"));
+      }
     } catch (error) {
       toast.error(error?.response?.data?.message || error.message || "加载文字模板库失败");
     } finally {
@@ -180,7 +395,7 @@ function SmartPackagingPage() {
     }
   };
 
-  const loadSoundEffectCatalog = async () => {
+  const loadSoundEffectCatalog = async (syncSelection = false) => {
     setIsLoadingSoundEffects(true);
     try {
       const response = await axios.post(`${apiBase}/smart_packaging/sound_effects`, {
@@ -192,15 +407,40 @@ function SmartPackagingPage() {
         return;
       }
       setSoundEffectCatalog(effects);
-      setHighlightSoundEffects(effects.length > 0
-        ? effects.map((item) => item.name).filter(Boolean).join("\n")
-        : DEFAULT_HIGHLIGHT_SOUND_EFFECTS.join("\n"));
+      if (syncSelection) {
+        setHighlightSoundEffects(effects.length > 0
+          ? effects.map((item) => item.name).filter(Boolean).join("\n")
+          : DEFAULT_HIGHLIGHT_SOUND_EFFECTS.join("\n"));
+      }
     } catch (error) {
       toast.error(error?.response?.data?.message || error.message || "加载音效库失败");
     } finally {
       setIsLoadingSoundEffects(false);
     }
   };
+
+  useEffect(() => {
+    try {
+      const savedTemplates = JSON.parse(localStorage.getItem(SMART_TEMPLATE_STORAGE_KEY) || "[]");
+      const validTemplates = Array.isArray(savedTemplates) && savedTemplates.length > 0
+        ? savedTemplates.slice(0, MAX_TEMPLATE_COUNT)
+        : createDefaultTemplates();
+      setTemplates(validTemplates);
+      setSelectedTemplateId(validTemplates[0]?.id || "");
+      if (validTemplates[0]) {
+        applyTemplateConfig(validTemplates[0].config);
+      }
+      if (!Array.isArray(savedTemplates) || savedTemplates.length === 0) {
+        localStorage.setItem(SMART_TEMPLATE_STORAGE_KEY, JSON.stringify(validTemplates));
+      }
+    } catch (error) {
+      const defaultTemplates = createDefaultTemplates();
+      setTemplates(defaultTemplates);
+      setSelectedTemplateId(defaultTemplates[0].id);
+      applyTemplateConfig(defaultTemplates[0].config);
+      localStorage.setItem(SMART_TEMPLATE_STORAGE_KEY, JSON.stringify(defaultTemplates));
+    }
+  }, []);
 
   useEffect(() => {
     const loadRuntimeConfig = async () => {
@@ -226,13 +466,13 @@ function SmartPackagingPage() {
 
   useEffect(() => {
     if (!apiBase) return;
-    loadTextTemplateCatalog();
+    loadTextTemplateCatalog(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiBase]);
 
   useEffect(() => {
     if (!apiBase) return;
-    loadSoundEffectCatalog();
+    loadSoundEffectCatalog(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiBase]);
 
@@ -384,8 +624,16 @@ function SmartPackagingPage() {
 
   const handleGenerate = async () => {
     const payload = buildPayload();
+    if (!apiBase) {
+      toast.warn("后端服务地址初始化中，请稍后再试");
+      return;
+    }
     if (payload.videos.length === 0) {
       toast.warn("请至少输入一个视频 URL 或选择一个本地视频");
+      return;
+    }
+    if (payload.videos.length > MAX_VIDEO_COUNT) {
+      toast.warn(`一次最多上传 ${MAX_VIDEO_COUNT} 个视频，请减少后再生成`);
       return;
     }
     if (enableAsr && !asrEndpoint.trim()) {
@@ -402,18 +650,44 @@ function SmartPackagingPage() {
     }
 
     setIsGenerating(true);
+    const startTime = new Date();
     try {
       const response = await axios.post(`${apiBase}/smart_packaging`, payload, {
         timeout: 180000,
       });
       if (response.data?.code !== 0 || !Array.isArray(response.data?.drafts)) {
         toast.error(response.data?.message || "智能包装失败");
+        await electronService.pushRpaLog({
+          eventName: "智能包装生成",
+          startTime,
+          endTime: new Date(),
+          executionQuantity: payload.videos.length,
+          executionResult: "失败",
+          remark: response.data?.message || "智能包装失败",
+        });
         return;
       }
       setDrafts(response.data.drafts);
       toast.success(`已生成 ${response.data.drafts.length} 个包装草稿`);
+      await electronService.pushRpaLog({
+        eventName: "智能包装生成",
+        startTime,
+        endTime: new Date(),
+        executionQuantity: response.data.drafts.length,
+        executionResult: "成功",
+        remark: `videos=${payload.videos.length}`,
+      });
     } catch (error) {
-      toast.error(error?.response?.data?.message || error.message || "智能包装失败");
+      const message = error?.response?.data?.message || error.message || "智能包装失败";
+      toast.error(message);
+      await electronService.pushRpaLog({
+        eventName: "智能包装生成",
+        startTime,
+        endTime: new Date(),
+        executionQuantity: payload.videos.length,
+        executionResult: "失败",
+        remark: message,
+      });
     } finally {
       setIsGenerating(false);
     }
@@ -423,8 +697,21 @@ function SmartPackagingPage() {
     try {
       const paths = await electronService.selectLocalVideos();
       if (Array.isArray(paths) && paths.length > 0) {
-        setLocalVideoPaths((current) => Array.from(new Set([...current, ...paths])));
-        toast.success(`已选择 ${paths.length} 个本地视频`);
+        setLocalVideoPaths((current) => {
+          const remaining = MAX_VIDEO_COUNT - remoteVideoCount - current.length;
+          if (remaining <= 0) {
+            toast.warn(`一次最多上传 ${MAX_VIDEO_COUNT} 个视频`);
+            return current;
+          }
+          const next = Array.from(new Set([...current, ...paths])).slice(0, MAX_VIDEO_COUNT - remoteVideoCount);
+          const addedCount = Math.max(0, next.length - current.length);
+          if (addedCount < paths.length) {
+            toast.warn(`最多保留 ${MAX_VIDEO_COUNT} 个视频，已自动截取`);
+          } else {
+            toast.success(`已选择 ${addedCount} 个本地视频`);
+          }
+          return next;
+        });
       }
     } catch (error) {
       toast.error(error.message || "选择本地视频失败");
@@ -435,47 +722,68 @@ function SmartPackagingPage() {
     setLocalVideoPaths((current) => current.filter((item) => item !== targetPath));
   };
 
-  const importDraft = async (draftUrl) => {
+  const importDraft = async (draftUrl, options = {}) => {
+    const { silent = false, openDir = true } = options;
     try {
       const jsonData = await electronService.getUrlJsonData(draftUrl);
       if (jsonData?.code !== 0 || !jsonData?.files) {
-        toast.error("获取草稿文件列表失败");
-        return;
+        if (!silent) toast.error("获取草稿文件列表失败");
+        return false;
       }
       const urlParams = new URLSearchParams(draftUrl.includes("?") ? draftUrl.split("?")[1] : "");
       const targetId = urlParams.get("draft_id");
       if (!targetId) {
-        toast.error("草稿地址缺少 draft_id");
-        return;
+        if (!silent) toast.error("草稿地址缺少 draft_id");
+        return false;
       }
       const remoteFileUrls = jsonData.files.filter((fileUrl) => fileUrl.includes(targetId));
       await electronService.saveFile({
         sourceUrl: draftUrl,
         remoteFileUrls,
         targetId,
-        isOpenDir: true,
+        isOpenDir: openDir,
       });
-      toast.success("草稿已写入剪映目录");
+      if (!silent) toast.success("草稿已写入剪映目录");
+      return true;
     } catch (error) {
-      toast.error(error.message || "写入剪映失败");
+      if (!silent) toast.error(error.message || "写入剪映失败");
+      return false;
+    }
+  };
+
+  const handleImportAllDrafts = async () => {
+    if (drafts.length === 0) {
+      toast.warn("暂无可写入的包装草稿");
+      return;
+    }
+    setIsImportingAll(true);
+    setImportingDraftUrls(drafts.map((draft) => draft.draft_url));
+    let successCount = 0;
+    try {
+      for (let index = 0; index < drafts.length; index += 1) {
+        const draft = drafts[index];
+        const success = await importDraft(draft.draft_url, {
+          silent: true,
+          openDir: index === drafts.length - 1,
+        });
+        if (success) {
+          successCount += 1;
+        }
+      }
+      if (successCount === drafts.length) {
+        toast.success(`已一键写入 ${successCount} 个草稿`);
+      } else {
+        toast.warn(`已写入 ${successCount}/${drafts.length} 个草稿，请检查失败项`);
+      }
+    } finally {
+      setIsImportingAll(false);
+      setImportingDraftUrls([]);
     }
   };
 
   return (
     <div className="smart-packaging-page">
       <div className="container">
-        <div className="smart-toolbar">
-          <div>
-            <div className="section-title">批量智能包装</div>
-            <div className="smart-summary">
-              视频 {videoCount} 条，{enableAsr ? "ASR 自动字幕" : `手动字幕行 ${captionCount} 条`}
-            </div>
-          </div>
-          <button className="btn btn-download" disabled={isGenerating} onClick={handleGenerate}>
-            {isGenerating ? "包装中..." : "生成包装草稿"}
-          </button>
-        </div>
-
         <div className="smart-layout">
           <div className="smart-panel smart-panel-main">
             <label className="smart-field">
@@ -670,7 +978,7 @@ function SmartPackagingPage() {
                     type="button"
                     className="btn btn-small"
                     disabled={isLoadingTextTemplates}
-                    onClick={loadTextTemplateCatalog}
+                    onClick={() => loadTextTemplateCatalog(true)}
                   >
                     {isLoadingTextTemplates ? "加载中..." : "刷新模板库"}
                   </button>
@@ -825,7 +1133,7 @@ function SmartPackagingPage() {
                     type="button"
                     className="btn btn-small"
                     disabled={isLoadingSoundEffects}
-                    onClick={loadSoundEffectCatalog}
+                    onClick={() => loadSoundEffectCatalog(true)}
                   >
                     {isLoadingSoundEffects ? "加载中..." : "刷新音效库"}
                   </button>
@@ -879,6 +1187,88 @@ function SmartPackagingPage() {
           </div>
         </div>
 
+        <div className="smart-toolbar smart-toolbar-bottom">
+          <div className="smart-toolbar-info">
+            <div>
+              <div className="section-title">批量智能包装</div>
+              <div className="smart-summary">
+                视频 {videoCount} 条 / 最多 {MAX_VIDEO_COUNT} 条，{enableAsr ? "ASR 自动字幕" : `手动字幕行 ${captionCount} 条`}
+              </div>
+            </div>
+            <div className="smart-template-controls">
+              <select value={selectedTemplateId} onChange={(e) => handleTemplateChange(e.target.value)}>
+                {templates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name}
+                  </option>
+                ))}
+              </select>
+              <button type="button" className="btn btn-small" onClick={handleSaveSelectedTemplate}>
+                保存
+              </button>
+              <button
+                type="button"
+                className="btn btn-small"
+                disabled={templates.length <= 1}
+                onClick={handleDeleteTemplate}
+              >
+                删除
+              </button>
+              <span className="smart-template-limit">
+                模板 {templates.length}/{MAX_TEMPLATE_COUNT}
+              </span>
+            </div>
+          </div>
+          <div className="smart-toolbar-actions">
+            <button className="btn btn-download" disabled={isGenerating} onClick={handleGenerate}>
+              {isGenerating ? "包装中..." : "生成包装草稿"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-small"
+              disabled={templates.length >= MAX_TEMPLATE_COUNT}
+              onClick={handleSaveAsTemplate}
+            >
+              保存为模板
+            </button>
+            {isSaveAsTemplateOpen && (
+              <form
+                className="smart-template-save-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  handleCreateTemplate();
+                }}
+              >
+                <input
+                  autoFocus
+                  value={saveAsTemplateName}
+                  maxLength={24}
+                  onChange={(event) => setSaveAsTemplateName(event.target.value)}
+                  placeholder="模板名称"
+                />
+                <button type="submit" className="btn btn-small">
+                  确定
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  onClick={() => {
+                    setIsSaveAsTemplateOpen(false);
+                    setSaveAsTemplateName("");
+                  }}
+                >
+                  取消
+                </button>
+              </form>
+            )}
+            {drafts.length > 0 && (
+              <button className="btn btn-small" disabled={isImportingAll} onClick={handleImportAllDrafts}>
+                {isImportingAll ? "写入中..." : "一键写入全部草稿"}
+              </button>
+            )}
+          </div>
+        </div>
+
         {drafts.length > 0 && (
           <div className="smart-result-list">
             {drafts.map((draft, index) => (
@@ -890,8 +1280,12 @@ function SmartPackagingPage() {
                     {(draft.applied || []).join(" / ")}
                   </div>
                 </div>
-                <button className="btn btn-small" onClick={() => importDraft(draft.draft_url)}>
-                  写入剪映
+                <button
+                  className="btn btn-small"
+                  disabled={isImportingAll || importingDraftUrls.includes(draft.draft_url)}
+                  onClick={() => importDraft(draft.draft_url)}
+                >
+                  {importingDraftUrls.includes(draft.draft_url) ? "写入中..." : "写入剪映"}
                 </button>
               </div>
             ))}

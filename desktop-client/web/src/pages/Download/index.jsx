@@ -3,7 +3,6 @@ import { toast } from "react-toastify";
 import electronService from "../../services/electronService";
 import ExternalWebpage from "../../components/ExternalWebpage";
 import Textarea from "../../components/Textarea";
-import Tabs from "../../components/Tabs";
 import DownloadControls from "../../components/DownloadControls";
 import DownloadButton from "../../components/DownloadButton";
 import LogModule from "../../components/LogModule";
@@ -104,16 +103,13 @@ function MainPage() {
   return (
     <div className="download-page" ref={downloadPageRef}>
       <div className="container">
+        <div className="download-welcome">欢迎使用</div>
+
         <ExternalWebpage />
 
         <Textarea
           value={textareaValue}
           onChange={(val) => setTextareaValue(val)}
-        />
-
-        <Tabs
-          onTabChange={(content) => setTextareaValue(content)}
-          initialContent={textareaValue}
         />
 
         <DownloadControls

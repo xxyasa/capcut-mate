@@ -1,12 +1,12 @@
-import electronService from "@/services/electronService";
-
 import "./index.less";
 
 // 顶部导航组件
-function TopHeader({ onTabChange, selectedTab }) {
+function TopHeader({ onTabChange, selectedTab, userInfo, onLogout }) {
   const handleTabClick = (tab) => {
     onTabChange(tab);
   };
+  const displayName = userInfo?.realName || userInfo?.name || userInfo?.nickname || "已登录";
+
   return (
     <div className="top-header">
       <div className="top-nav">
@@ -14,18 +14,9 @@ function TopHeader({ onTabChange, selectedTab }) {
           className={`top-nav-item logo`}
           onClick={() => handleTabClick("download")}
         >
-          剪映小助手(免费客户端)
+          极易智能包装小助手
         </div>
         <div className="top-nav-group">
-          <div
-            className={`top-nav-item`}
-            onClick={() => {
-              handleTabClick("download");
-              electronService.openExternalUrl("https://jcaigc.cn");
-            }}
-          >
-            前往官网
-          </div>
           <div
             className={`top-nav-item ${selectedTab === "history" ? "active" : ""}`}
             onClick={() => handleTabClick("history")}
@@ -50,6 +41,12 @@ function TopHeader({ onTabChange, selectedTab }) {
           >
             配置中心
           </div>
+          <div className="top-user" title={displayName}>
+            {displayName}
+          </div>
+          <button className="top-logout" type="button" onClick={onLogout}>
+            退出
+          </button>
         </div>
       </div>
     </div>

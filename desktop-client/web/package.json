@@ -1,7 +1,7 @@
 {
   "name": "@sd/web",
-  "version": "0.0.100",
-  "description": "剪映小助手，用于下载剪映草稿",
+  "version": "1.3.0",
+  "description": "极易智能包装小助手，用于智能包装并写入剪映草稿",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

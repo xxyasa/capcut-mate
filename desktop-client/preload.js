@@ -4,6 +4,13 @@ console.log('Preload script is loaded!');
 
 // 通过 contextBridge 安全地将 API 暴露给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
+    // 登录相关
+    login: (loginData) => ipcRenderer.invoke('login', loginData),
+
+    checkLogin: () => ipcRenderer.invoke('check-login'),
+
+    logout: () => ipcRenderer.invoke('logout'),
+
     // 保存文件
     saveFile: (data) => ipcRenderer.invoke('save-file', data),
 
@@ -52,4 +59,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
     getRuntimeConfig: () => ipcRenderer.invoke('get-runtime-config'),
+
+    pushRpaLog: (payload) => ipcRenderer.invoke('push-rpa-log', payload),
 });

@@ -82,6 +82,9 @@ const mockElectronAPI = {
   getAppVersion: async () => {
     return null;
   },
+  pushRpaLog: async () => {
+    return { success: false, message: 'Not available in browser' };
+  },
 };
 
 // 实际的Electron API（用于Electron环境）
@@ -124,6 +127,9 @@ const electronAPI = {
   },
   getAppVersion: async () => {
     return await window.electronAPI.getAppVersion();
+  },
+  pushRpaLog: async (payload) => {
+    return await window.electronAPI.pushRpaLog(payload);
   },
 };
 

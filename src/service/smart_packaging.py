@@ -332,6 +332,10 @@ HIGHLIGHT_TIME_LEAD = 260_000
 HIGHLIGHT_TIME_TAIL = 260_000
 SUPPORTED_JIANYING_AUDIO_SUFFIXES = {".mp3", ".wav", ".m4a", ".aac"}
 SOUND_EFFECT_PREVIEW_DIR = os.path.join(config.PROJECT_ROOT, "output", "sound_effect_previews")
+SMART_PACKAGING_ASSETS_DIR = os.getenv(
+    "SMART_PACKAGING_ASSETS_DIR",
+    os.path.join(config.APP_ROOT, "smart-assets"),
+)
 
 
 @dataclass
@@ -689,14 +693,49 @@ def _apply_caption_style(
     return styled
 
 
-def _apply_plain_caption_style(captions: List[dict], req: SmartPackagingRequest) -> List[dict]:
+def _apply_plain_caption_style(
+    captions: List[dict],
+    req: SmartPackagingRequest,
+    randomizer: random.Random,
+) -> List[dict]:
+    preset = _style_preset(req.style)
+    in_animations = _merge_candidates(req.caption.in_animations, preset["caption_in_animations"])
+    loop_animations = _merge_candidates(req.caption.loop_animations, preset["caption_loop_animations"])
+
     styled = [dict(caption) for caption in captions]
     for caption in styled:
         caption.setdefault("font_size", req.caption.font_size)
         caption.pop("text_effect", None)
-        caption.pop("in_animation", None)
-        caption.pop("loop_animation", None)
+        if in_animations:
+            caption.setdefault("in_animation", _choose_optional(in_animations, randomizer))
+        else:
+            caption.pop("in_animation", None)
+        if loop_animations:
+            caption.setdefault("loop_animation", _choose_optional(loop_animations, randomizer))
+        else:
+            caption.pop("loop_animation", None)
     return styled
+
+
+def _offset_timed_items(items: List[dict], offset: int, source_index_offset: int = 0) -> List[dict]:
+    if offset == 0 and source_index_offset == 0:
+        return [dict(item) for item in items]
+
+    result: List[dict] = []
+    for item in items:
+        next_item = dict(item)
+        for key in ("start", "end", "_source_caption_start", "_source_caption_end"):
+            if key in next_item and next_item[key] is not None:
+                next_item[key] = int(next_item[key]) + offset
+        if "_source_caption_index" in next_item and next_item["_source_caption_index"] is not None:
+            next_item["_source_caption_index"] = int(next_item["_source_caption_index"]) + source_index_offset
+        result.append(next_item)
+    return result
+
+
+def _append_applied(applied: List[str], name: str) -> None:
+    if name not in applied:
+        applied.append(name)
 
 
 def _normalize_highlight_text(text: str, max_chars: int) -> str:
@@ -1471,21 +1510,21 @@ def _choose_jianying_text_template_entry(
 
 
 class _RawTextTemplateAnimation:
-    def __init__(self, animation_data: dict, duration_scale: float):
+    def __init__(self, animation_data: dict, duration_scale: float, *, is_video_animation: bool = False):
         self.name = str(animation_data.get("anim_resource_id") or "")
         self.effect_id = str(animation_data.get("anim_resource_id") or "")
         self.resource_id = str(animation_data.get("anim_resource_id") or "")
         self.animation_type = _normalize_template_animation_type(animation_data.get("anim_type"))
         self.start = max(0, int(float(animation_data.get("anim_start_time") or 0) * 1_000_000 * duration_scale))
         self.duration = max(1, int(float(animation_data.get("duration") or 0) * 1_000_000 * duration_scale))
-        self.is_video_animation = False
+        self.is_video_animation = is_video_animation
 
     def export_json(self) -> dict:
         return {
             "anim_adjust_params": None,
             "platform": "all",
-            "panel": "",
-            "material_type": "sticker",
+            "panel": "video" if self.is_video_animation else "",
+            "material_type": "video" if self.is_video_animation else "sticker",
             "name": self.name,
             "id": self.effect_id,
             "type": self.animation_type,
@@ -1507,10 +1546,13 @@ def _segment_animations_from_template(child: dict, duration_scale: float) -> Seg
     if not isinstance(anims, list) or not anims:
         return None
     segment_animations = SegmentAnimations()
+    is_video_animation = child.get("type") == "sticker"
     for anim in anims:
         if not isinstance(anim, dict) or not anim.get("anim_resource_id"):
             continue
-        segment_animations.animations.append(_RawTextTemplateAnimation(anim, duration_scale))
+        segment_animations.animations.append(
+            _RawTextTemplateAnimation(anim, duration_scale, is_video_animation=is_video_animation)
+        )
     if not segment_animations.animations:
         return None
     return segment_animations
@@ -2190,15 +2232,68 @@ def _load_preview_sound_files() -> List[pathlib.Path]:
     )
 
 
+def _load_smart_assets_manifest() -> dict:
+    manifest_path = pathlib.Path(SMART_PACKAGING_ASSETS_DIR) / "manifest.json"
+    if not manifest_path.is_file():
+        return {}
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.warning(f"Failed to read smart assets manifest: {manifest_path}, error: {exc}")
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _manifest_sound_entries() -> List[dict]:
+    manifest = _load_smart_assets_manifest()
+    items = manifest.get("sound_effects", [])
+    if not isinstance(items, list):
+        return []
+    entries: List[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        material_id = str(item.get("material_id") or "").strip()
+        if name and material_id:
+            entries.append({"name": name, "material_id": material_id})
+    return entries
+
+
+def _manifest_sound_entry_by_preview_stem(preview_stem: str, entries: Sequence[dict]) -> dict | None:
+    stem = str(preview_stem or "").strip()
+    if not stem:
+        return None
+    stem_key = stem.lower()
+    for entry in entries:
+        material_id = str(entry.get("material_id") or "")
+        if material_id and stem_key in {
+            material_id.lower(),
+            _jianying_material_cache_hex(material_id),
+        }:
+            return entry
+    return None
+
+
 def _build_jianying_sound_path_map(req: SmartPackagingRequest) -> dict[str, str]:
     use_preview_cache = not req.sound_effects.jianying_sound_draft_dir
     preview_files = _load_preview_sound_files() if use_preview_cache else []
     if use_preview_cache and preview_files:
         mapping: dict[str, str] = {}
+        manifest_entries = _manifest_sound_entries()
         for audio_path in preview_files:
-            name = audio_path.stem
-            mapping[name] = str(audio_path)
-            mapping[_normalize_sound_lookup_key(name)] = str(audio_path)
+            manifest_entry = _manifest_sound_entry_by_preview_stem(audio_path.stem, manifest_entries)
+            names = [audio_path.stem]
+            if manifest_entry:
+                names.extend([
+                    str(manifest_entry.get("name") or ""),
+                    str(manifest_entry.get("material_id") or ""),
+                ])
+            for name in names:
+                if not name:
+                    continue
+                mapping[name] = str(audio_path)
+                mapping[_normalize_sound_lookup_key(name)] = str(audio_path)
         return mapping
 
     entries = _load_jianying_sound_entries(req.sound_effects.jianying_sound_draft_dir)
@@ -2277,12 +2372,16 @@ def get_smart_packaging_sound_effects(
     preview_files = _load_preview_sound_files() if use_preview_cache else []
     if use_preview_cache and preview_files:
         items = []
+        manifest_entries = _manifest_sound_entries()
         for audio_path in preview_files:
+            manifest_entry = _manifest_sound_entry_by_preview_stem(audio_path.stem, manifest_entries)
+            name = manifest_entry["name"] if manifest_entry else audio_path.stem
+            material_id = manifest_entry["material_id"] if manifest_entry else audio_path.stem
             preview_url = f"{base_url.rstrip('/')}/output/sound_effect_previews/{audio_path.name}"
             items.append(
                 SmartPackagingSoundEffectItem(
-                    name=audio_path.stem,
-                    material_id=audio_path.stem,
+                    name=name,
+                    material_id=material_id,
                     preview_url=preview_url,
                     duration=_audio_duration_or_default(str(audio_path), 0),
                 )
@@ -2853,15 +2952,18 @@ def _build_sticker_infos(
 
 
 async def smart_packaging(req: SmartPackagingRequest) -> SmartPackagingResponse:
-    """批量智能包装视频，每个输入视频输出一个剪映草稿。"""
+    """批量智能包装视频，所有输入视频组合输出为一个剪映草稿。"""
 
     base_seed = req.seed if req.seed is not None else random.SystemRandom().randint(1, 2**31 - 1)
-    drafts: List[SmartPackagingDraft] = []
+    prepared_items: List[tuple[int, SmartPackagingVideoInput, PreparedVideo, int, random.Random]] = []
+    total_duration = 0
 
-    for index, video in enumerate(req.videos):
-        draft_seed = base_seed + index
-        randomizer = random.Random(draft_seed)
-        prepared = await asyncio.to_thread(_prepare_video, video)
+    try:
+        for index, video in enumerate(req.videos):
+            prepared = await asyncio.to_thread(_prepare_video, video)
+            prepared_items.append((index, video, prepared, total_duration, random.Random(base_seed + index)))
+            total_duration += prepared.duration
+
         draft_url = create_draft(width=req.width, height=req.height)
         applied: List[str] = []
         caption_segment_ids: List[str] = []
@@ -2871,144 +2973,192 @@ async def smart_packaging(req: SmartPackagingRequest) -> SmartPackagingResponse:
         sticker_segment_ids: List[str] = []
         audio_ids: List[str] = []
 
-        try:
-            _, _, _, video_segment_ids, _ = await add_videos_async(
-                draft_url=draft_url,
-                video_infos=_stringify(_build_video_infos(prepared, req.mute_original)),
-            )
-            applied.append("video")
+        video_infos: List[dict] = []
+        plain_caption_infos: List[dict] = []
+        fallback_highlight_infos: List[dict] = []
+        highlight_audio_infos: List[dict] = []
+        base_audio_infos: List[dict] = []
+        sticker_infos: List[dict] = []
+        effect_infos: List[dict] = []
+        filter_infos: List[dict] = []
+        template_highlight_infos: List[tuple[dict, dict | None]] = []
+        source_index_offset = 0
 
-            audio_infos = _build_audio_infos(prepared.duration, req, randomizer)
-            if audio_infos:
-                _, _, audio_ids = await add_audios_async(
-                    draft_url=draft_url,
-                    audio_infos=_stringify(audio_infos),
-                )
-                applied.append("audio")
+        for _, _, prepared, offset, randomizer in prepared_items:
+            video_info = _build_video_infos(prepared, req.mute_original)[0]
+            video_info["start"] = offset
+            video_info["end"] = offset + prepared.duration
+            video_infos.append(video_info)
+
+            base_audio_infos.extend(_offset_timed_items(_build_audio_infos(prepared.duration, req, randomizer), offset))
 
             if req.caption.enabled:
                 captions = await asyncio.to_thread(_resolve_captions, prepared, req, randomizer)
+                local_source_count = len({int(caption.get("_source_caption_index", index)) for index, caption in enumerate(captions)})
                 if captions:
+                    local_source_indexes = sorted(
+                        {int(caption.get("_source_caption_index", index)) for index, caption in enumerate(captions)}
+                    )
+                    local_source_index_map = {source_index: source_index_offset + index for index, source_index in enumerate(local_source_indexes)}
+                    normalized_captions: List[dict] = []
+                    for caption_index, caption in enumerate(captions):
+                        source_index = int(caption.get("_source_caption_index", caption_index))
+                        next_caption = dict(caption)
+                        next_caption["_source_caption_index"] = local_source_index_map.get(source_index, source_index_offset + caption_index)
+                        normalized_captions.append(next_caption)
+                    captions = normalized_captions
+
                     plain_keyword_highlights = _build_plain_caption_keyword_highlights(captions, req)
                     highlight_captions = _build_highlight_captions(captions, req, randomizer, prepared.duration)
                     plain_captions = _apply_highlight_keywords_to_plain_captions(
-                        _apply_plain_caption_style(captions, req),
+                        _apply_plain_caption_style(captions, req, randomizer),
                         plain_keyword_highlights,
                         req,
                     )
-                    _, _, _, caption_segment_ids, _ = await add_captions_async(
-                        draft_url=draft_url,
-                        captions=_stringify(plain_captions),
-                        text_color=req.caption.text_color,
-                        border_color=req.caption.border_color,
-                        font=req.caption.font,
-                        font_size=req.caption.font_size,
-                        transform_y=req.caption.transform_y,
-                    )
-                    applied.append("captions")
+                    global_plain_captions = _offset_timed_items(plain_captions, offset)
+                    global_highlight_captions = _offset_timed_items(highlight_captions, offset)
+                    plain_caption_infos.extend(global_plain_captions)
 
-                    if highlight_captions:
-                        fallback_highlight_captions = highlight_captions
+                    if global_highlight_captions:
+                        current_fallback_highlights = global_highlight_captions
                         if req.caption.highlight_style_mode == "template":
                             template_entries = _load_jianying_text_template_entries(req.caption.jianying_text_template_draft_dir)
-                            fallback_highlight_captions = []
+                            current_fallback_highlights = []
                             used_template_material_ids: set[str] = set()
-                            for highlight in highlight_captions:
+                            for highlight in global_highlight_captions:
                                 template_entry = _choose_jianying_text_template_entry(
                                     template_entries,
                                     req.caption.text_template_names,
                                     randomizer,
                                     used_template_material_ids,
                                 )
-                                next_ids = (
-                                    _add_text_template_layers_to_draft(draft_url, highlight, template_entry)
-                                    if template_entry
-                                    else []
-                                )
-                                if next_ids:
-                                    highlight_segment_ids.extend(next_ids)
+                                if template_entry:
+                                    template_highlight_infos.append((highlight, template_entry))
                                 else:
-                                    fallback_highlight_captions.append(highlight)
-
-                        if fallback_highlight_captions:
-                            for highlight_track in _split_overlapping_captions_into_tracks(fallback_highlight_captions):
-                                _, _, _, next_highlight_segment_ids, _ = await add_captions_async(
-                                    draft_url=draft_url,
-                                    captions=_stringify(highlight_track),
-                                    text_color="#ffffff",
-                                    border_color=None,
-                                    font=req.caption.font,
-                                    font_size=req.caption.highlight_font_size,
-                                    transform_y=0.0,
-                                )
-                                highlight_segment_ids.extend(next_highlight_segment_ids)
-                        if highlight_segment_ids:
-                            applied.append("highlights")
-
-                        highlight_audio_infos = _build_highlight_audio_infos(highlight_captions, req, randomizer)
-                        if highlight_audio_infos:
-                            for highlight_audio_track in _split_overlapping_audio_infos_into_tracks(highlight_audio_infos):
-                                _, _, highlight_audio_ids = await add_audios_async(
-                                    draft_url=draft_url,
-                                    audio_infos=_stringify(highlight_audio_track),
-                                )
-                                audio_ids.extend(highlight_audio_ids)
-                            if "audio" not in applied:
-                                applied.append("audio")
-
-                    sticker_infos = _build_sticker_infos(prepared.duration, captions, highlight_captions, req, randomizer)
-                    for sticker_info in sticker_infos:
-                        _, _, _, segment_id, _ = await add_sticker_async(
-                            draft_url=draft_url,
-                            sticker_id=sticker_info["sticker_id"],
-                            start=sticker_info["start"],
-                            end=sticker_info["end"],
-                            scale=sticker_info["scale"],
-                            transform_x=sticker_info["transform_x"],
-                            transform_y=sticker_info["transform_y"],
+                                    current_fallback_highlights.append(highlight)
+                        fallback_highlight_infos.extend(current_fallback_highlights)
+                        highlight_audio_infos.extend(
+                            _offset_timed_items(
+                                _build_highlight_audio_infos(highlight_captions, req, randomizer),
+                                offset,
+                            )
                         )
-                        sticker_segment_ids.append(segment_id)
-                    if sticker_segment_ids:
-                        applied.append("stickers")
 
-            effect_infos = _build_effect_infos(prepared.duration, req, randomizer)
+                    sticker_infos.extend(
+                        _offset_timed_items(
+                            _build_sticker_infos(prepared.duration, captions, highlight_captions, req, randomizer),
+                            offset,
+                        )
+                    )
+                source_index_offset += local_source_count
+
+            effect_infos.extend(_offset_timed_items(_build_effect_infos(prepared.duration, req, randomizer), offset))
+            filter_infos.extend(_offset_timed_items(_build_filter_infos(prepared.duration, req, randomizer), offset))
+
+        try:
+            _, _, _, video_segment_ids, _ = await add_videos_async(
+                draft_url=draft_url,
+                video_infos=_stringify(video_infos),
+            )
+            _append_applied(applied, "video")
+
+            if base_audio_infos:
+                _, _, next_audio_ids = await add_audios_async(
+                    draft_url=draft_url,
+                    audio_infos=_stringify(base_audio_infos),
+                )
+                audio_ids.extend(next_audio_ids)
+                _append_applied(applied, "audio")
+
+            if plain_caption_infos:
+                _, _, _, caption_segment_ids, _ = await add_captions_async(
+                    draft_url=draft_url,
+                    captions=_stringify(plain_caption_infos),
+                    text_color=req.caption.text_color,
+                    border_color=req.caption.border_color,
+                    font=req.caption.font,
+                    font_size=req.caption.font_size,
+                    transform_y=req.caption.transform_y,
+                )
+                _append_applied(applied, "captions")
+
+            if fallback_highlight_infos:
+                for highlight_track in _split_overlapping_captions_into_tracks(fallback_highlight_infos):
+                    _, _, _, next_highlight_segment_ids, _ = await add_captions_async(
+                        draft_url=draft_url,
+                        captions=_stringify(highlight_track),
+                        text_color="#ffffff",
+                        border_color=None,
+                        font=req.caption.font,
+                        font_size=req.caption.highlight_font_size,
+                        transform_y=0.0,
+                    )
+                    highlight_segment_ids.extend(next_highlight_segment_ids)
+            if highlight_segment_ids:
+                _append_applied(applied, "highlights")
+
+            if highlight_audio_infos:
+                for highlight_audio_track in _split_overlapping_audio_infos_into_tracks(highlight_audio_infos):
+                    _, _, next_highlight_audio_ids = await add_audios_async(
+                        draft_url=draft_url,
+                        audio_infos=_stringify(highlight_audio_track),
+                    )
+                    audio_ids.extend(next_highlight_audio_ids)
+                _append_applied(applied, "audio")
+
+            for sticker_info in sticker_infos:
+                _, _, _, segment_id, _ = await add_sticker_async(
+                    draft_url=draft_url,
+                    sticker_id=sticker_info["sticker_id"],
+                    start=sticker_info["start"],
+                    end=sticker_info["end"],
+                    scale=sticker_info["scale"],
+                    transform_x=sticker_info["transform_x"],
+                    transform_y=sticker_info["transform_y"],
+                    in_animation=sticker_info.get("in_animation"),
+                    in_animation_duration=sticker_info.get("in_animation_duration"),
+                )
+                sticker_segment_ids.append(segment_id)
+            if sticker_segment_ids:
+                _append_applied(applied, "stickers")
+
             if effect_infos:
                 _, _, _, effect_segment_ids = await add_effects_async(
                     draft_url=draft_url,
                     effect_infos=_stringify(effect_infos),
                 )
-                applied.append("effects")
+                _append_applied(applied, "effects")
 
-            filter_infos = _build_filter_infos(prepared.duration, req, randomizer)
             if filter_infos:
                 _, _, _, filter_segment_ids = await add_filters_async(
                     draft_url=draft_url,
                     filter_infos=_stringify(filter_infos),
                 )
-                applied.append("filters")
+                _append_applied(applied, "filters")
 
             await save_draft_async(draft_url=draft_url)
-            drafts.append(
-                SmartPackagingDraft(
-                    draft_url=draft_url,
-                    source_video_url=str(video.video_url or video.local_video_path),
-                    duration=prepared.duration,
-                    seed=draft_seed,
-                    video_segment_ids=video_segment_ids,
-                    caption_segment_ids=caption_segment_ids,
-                    highlight_segment_ids=highlight_segment_ids,
-                    effect_segment_ids=effect_segment_ids,
-                    filter_segment_ids=filter_segment_ids,
-                    sticker_segment_ids=sticker_segment_ids,
-                    audio_ids=audio_ids,
-                    applied=applied,
-                )
+            return SmartPackagingResponse(
+                drafts=[
+                    SmartPackagingDraft(
+                        draft_url=draft_url,
+                        source_video_url="\n".join(str(video.video_url or video.local_video_path) for _, video, _, _, _ in prepared_items),
+                        duration=total_duration,
+                        seed=base_seed,
+                        video_segment_ids=video_segment_ids,
+                        caption_segment_ids=caption_segment_ids,
+                        highlight_segment_ids=highlight_segment_ids,
+                        effect_segment_ids=effect_segment_ids,
+                        filter_segment_ids=filter_segment_ids,
+                        sticker_segment_ids=sticker_segment_ids,
+                        audio_ids=audio_ids,
+                        applied=applied,
+                    )
+                ]
             )
         except Exception:
-            logger.exception(f"smart_packaging failed, draft_url={draft_url}, seed={draft_seed}")
+            logger.exception(f"smart_packaging failed, draft_url={draft_url}, seed={base_seed}")
             raise
-        finally:
+    finally:
+        for _, _, prepared, _, _ in prepared_items:
             if prepared.cleanup_local_file:
                 cleanup_temp_file(prepared.local_video_path)
-
-    return SmartPackagingResponse(drafts=drafts)

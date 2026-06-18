@@ -1,9 +1,133 @@
 import os
+import json
+import pathlib
+import shutil
+import subprocess
+import sys
 import uuid
-import pymediainfo
+
+try:
+    import pymediainfo
+except Exception:
+    pymediainfo = None
 
 from typing import Optional, Literal
 from typing import Dict, Any
+
+
+def _find_ffprobe() -> str | None:
+    ffprobe_path = shutil.which("ffprobe")
+    if ffprobe_path:
+        return ffprobe_path
+
+    app_root = pathlib.Path(getattr(sys, "_MEIPASS", pathlib.Path(__file__).resolve().parents[2]))
+    for candidate in (
+        app_root / "tools" / "ffprobe.exe",
+        app_root / "tools" / "ffprobe",
+        pathlib.Path(__file__).resolve().parents[2] / "tools" / "ffprobe.exe",
+        pathlib.Path(__file__).resolve().parents[2] / "tools" / "ffprobe",
+    ):
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def _run_ffprobe(path: str) -> dict | None:
+    ffprobe_path = _find_ffprobe()
+    if not ffprobe_path:
+        return None
+    try:
+        result = subprocess.run(
+            [
+                ffprobe_path,
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_type,width,height,duration:format=duration",
+                "-of",
+                "json",
+                path,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=30,
+        )
+    except Exception:
+        return None
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+
+
+def _duration_to_microseconds(value: object) -> int | None:
+    try:
+        duration = float(value)
+    except (TypeError, ValueError):
+        return None
+    if duration <= 0:
+        return None
+    return int(duration * 1_000_000)
+
+
+def _probe_duration(data: dict, stream: dict | None = None) -> int | None:
+    if stream:
+        duration = _duration_to_microseconds(stream.get("duration"))
+        if duration:
+            return duration
+    return _duration_to_microseconds((data.get("format") or {}).get("duration"))
+
+
+def _run_imageio_ffmpeg(path: str) -> dict | None:
+    try:
+        import imageio_ffmpeg
+    except Exception:
+        return None
+    try:
+        result = subprocess.run(
+            [imageio_ffmpeg.get_ffmpeg_exe(), "-i", path, "-f", "null", "-"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=30,
+        )
+    except Exception:
+        return None
+
+    output = f"{result.stdout}\n{result.stderr}"
+    duration_match = __import__("re").search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", output)
+    duration = None
+    if duration_match:
+        hours = int(duration_match.group(1))
+        minutes = int(duration_match.group(2))
+        seconds = float(duration_match.group(3))
+        duration = int((hours * 3600 + minutes * 60 + seconds) * 1_000_000)
+
+    video_match = __import__("re").search(r"Video:.*?(\d{2,5})x(\d{2,5})", output)
+    return {
+        "duration": duration,
+        "has_audio": "Audio:" in output,
+        "has_video": "Video:" in output,
+        "width": int(video_match.group(1)) if video_match else 0,
+        "height": int(video_match.group(2)) if video_match else 0,
+    }
+
+
+def _parse_with_pymediainfo(path: str):
+    if pymediainfo is None:
+        return None
+    media_info = getattr(pymediainfo, "MediaInfo", pymediainfo)
+    try:
+        if hasattr(media_info, "can_parse") and not media_info.can_parse():
+            return None
+        return media_info.parse(path, mediainfo_options={"File_TestContinuousFileNames": "0"})
+    except TypeError:
+        return media_info.parse(path)
+    except Exception:
+        return None
 
 class CropSettings:
     """素材的裁剪设置, 各属性均在0-1之间, 注意素材的坐标原点在左上角"""
@@ -88,31 +212,51 @@ class VideoMaterial:
         self.crop_settings = crop_settings
         self.local_material_id = ""
 
-        if not pymediainfo.MediaInfo.can_parse():
-            raise ValueError(f"不支持的视频素材类型 '{postfix}'")
+        info = _parse_with_pymediainfo(path)
+        if info:
+            # 有视频轨道的视为视频素材
+            if len(info.video_tracks):
+                self.material_type = "video"
+                self.duration = int(info.video_tracks[0].duration * 1e3)  # type: ignore
+                self.width, self.height = info.video_tracks[0].width, info.video_tracks[0].height  # type: ignore
+                return
+            elif len(getattr(info, "image_tracks", [])):
+                self.material_type = "photo"
+                self.duration = 10800000000  # 相当于3h
+                self.width, self.height = info.image_tracks[0].width, info.image_tracks[0].height  # type: ignore
+                return
 
-        info: pymediainfo.MediaInfo = \
-            pymediainfo.MediaInfo.parse(path, mediainfo_options={"File_TestContinuousFileNames": "0"})  # type: ignore
-        # 有视频轨道的视为视频素材
-        if len(info.video_tracks):
-            self.material_type = "video"
-            self.duration = int(info.video_tracks[0].duration * 1e3)  # type: ignore
-            self.width, self.height = info.video_tracks[0].width, info.video_tracks[0].height  # type: ignore
-        # gif文件使用imageio库获取长度
-        elif postfix.lower() == ".gif":
-            import imageio
-            gif = imageio.get_reader(path)
+        probe_data = _run_ffprobe(path)
+        streams = probe_data.get("streams", []) if probe_data else []
+        video_stream = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
+        if video_stream:
+            self.width = int(video_stream.get("width") or 0)
+            self.height = int(video_stream.get("height") or 0)
+            if postfix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".bmp"}:
+                self.material_type = "photo"
+                self.duration = 10800000000
+                return
+            duration = _probe_duration(probe_data or {}, video_stream)
+            if duration:
+                self.material_type = "video"
+                self.duration = duration
+                return
 
-            self.material_type = "video"
-            self.duration = int(round(gif.get_meta_data()['duration'] * gif.get_length() * 1e3))
-            self.width, self.height = info.image_tracks[0].width, info.image_tracks[0].height  # type: ignore
-            gif.close()
-        elif len(info.image_tracks):
-            self.material_type = "photo"
-            self.duration = 10800000000  # 相当于3h
-            self.width, self.height = info.image_tracks[0].width, info.image_tracks[0].height  # type: ignore
-        else:
-            raise ValueError(f"输入的素材文件 {path} 没有视频轨道或图片轨道")
+        ffmpeg_data = _run_imageio_ffmpeg(path)
+        if ffmpeg_data and ffmpeg_data.get("has_video"):
+            self.width = int(ffmpeg_data.get("width") or 0)
+            self.height = int(ffmpeg_data.get("height") or 0)
+            if postfix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".bmp"}:
+                self.material_type = "photo"
+                self.duration = 10800000000
+                return
+            duration = ffmpeg_data.get("duration")
+            if duration:
+                self.material_type = "video"
+                self.duration = int(duration)
+                return
+
+        raise ValueError(f"输入的素材文件 {path} 没有视频轨道或图片轨道")
 
     def export_json(self) -> Dict[str, Any]:
         video_material_json = {
@@ -149,6 +293,8 @@ class AudioMaterial:
     duration: int
     """素材时长, 单位为微秒"""
 
+    _AUDIO_POSTFIXES = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".wma"}
+
     def __init__(self, path: str, material_name: Optional[str] = None):
         """从指定位置加载音频素材, 注意视频文件不应该作为音频素材使用
 
@@ -161,6 +307,7 @@ class AudioMaterial:
             `ValueError`: 不支持的素材文件类型.
         """
         path = os.path.abspath(path)
+        postfix = os.path.splitext(path)[1].lower()
         if not os.path.exists(path):
             raise FileNotFoundError(f"找不到 {path}")
 
@@ -168,14 +315,31 @@ class AudioMaterial:
         self.material_id = uuid.uuid4().hex
         self.path = path
 
-        if not pymediainfo.MediaInfo.can_parse():
-            raise ValueError("不支持的音频素材类型 %s" % os.path.splitext(path)[1])
-        info: pymediainfo.MediaInfo = pymediainfo.MediaInfo.parse(path)  # type: ignore
-        if len(info.video_tracks):
+        info = _parse_with_pymediainfo(path)
+        if info:
+            if not len(info.audio_tracks):
+                raise ValueError(f"给定的素材文件 {path} 没有音频轨道")
+            if len(info.video_tracks) and postfix not in self._AUDIO_POSTFIXES:
+                raise ValueError("音频素材不应包含视频轨道")
+            self.duration = int(info.audio_tracks[0].duration * 1e3)  # type: ignore
+            return
+
+        probe_data = _run_ffprobe(path)
+        streams = probe_data.get("streams", []) if probe_data else []
+        audio_stream = next((stream for stream in streams if stream.get("codec_type") == "audio"), None)
+        has_video_stream = any(stream.get("codec_type") == "video" for stream in streams)
+        if has_video_stream and postfix not in self._AUDIO_POSTFIXES:
             raise ValueError("音频素材不应包含视频轨道")
-        if not len(info.audio_tracks):
+        duration = _probe_duration(probe_data or {}, audio_stream) if audio_stream else None
+        if not audio_stream or not duration:
+            ffmpeg_data = _run_imageio_ffmpeg(path)
+            if ffmpeg_data and ffmpeg_data.get("has_video") and postfix not in self._AUDIO_POSTFIXES:
+                raise ValueError("音频素材不应包含视频轨道")
+            if ffmpeg_data and ffmpeg_data.get("has_audio"):
+                duration = ffmpeg_data.get("duration")
+        if not duration:
             raise ValueError(f"给定的素材文件 {path} 没有音频轨道")
-        self.duration = int(info.audio_tracks[0].duration * 1e3)  # type: ignore
+        self.duration = int(duration)
 
     def export_json(self) -> Dict[str, Any]:
         return {

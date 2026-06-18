@@ -2,6 +2,8 @@ const { ipcMain, dialog, app } = require('electron');
 
 // 引入logger模块
 const logger = require('./logger');
+const auth = require('./authService');
+const { pushRpaLog } = require('./reportService');
 
 // 引入axios
 const axios = require('axios');
@@ -45,7 +47,18 @@ function setupIpcHandlers(mainWindow, options = {}) {
   });
 
   ipcMain.handle('save-file', async (event, config) => {
-    await downloadFiles(config, mainWindow);
+    const startTime = new Date();
+    const result = await downloadFiles(config, mainWindow);
+    const success = result?.success !== false;
+    await pushRpaLog({
+      eventName: '写入剪映草稿',
+      startTime,
+      endTime: new Date(),
+      executionQuantity: Number(config?.executionQuantity || config?.draftCount || 1),
+      executionResult: success ? '成功' : '失败',
+      remark: success ? `targetId=${config?.targetId || ''}` : result?.message,
+    });
+    return result;
   });
 
   ipcMain.handle('show-message-box', async (event, options) => {
@@ -111,6 +124,51 @@ function setupIpcHandlers(mainWindow, options = {}) {
 
   ipcMain.handle('get-runtime-config', async () => {
     return getRuntimeConfig();
+  });
+
+  ipcMain.handle('login', async (event, loginData) => {
+    try {
+      const result = await auth.makeLoginRequest(loginData);
+      if (result.success) {
+        auth.setLoginState(result.data);
+        await pushRpaLog({
+          eventName: '登录',
+          executionQuantity: 1,
+          executionResult: '成功',
+          remark: `grant_type=${loginData?.grant_type || ''}`,
+          userInfo: auth.getUserInfo(),
+        });
+      }
+      return result;
+    } catch (error) {
+      logger.error('登录请求失败:', error);
+      return {
+        success: false,
+        message: error.message,
+      };
+    }
+  });
+
+  ipcMain.handle('check-login', async () => {
+    auth.loadLoginState();
+    if (auth.isLoginValid()) {
+      return {
+        isLoggedIn: true,
+        userInfo: auth.getUserInfo(),
+      };
+    }
+    return {
+      isLoggedIn: false,
+    };
+  });
+
+  ipcMain.handle('logout', async () => {
+    auth.logout();
+    return { success: true };
+  });
+
+  ipcMain.handle('push-rpa-log', async (event, payload = {}) => {
+    return await pushRpaLog(payload);
   });
 }
 

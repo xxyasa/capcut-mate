@@ -59,18 +59,44 @@ function MaterialRemixPage() {
     }
 
     setIsGenerating(true);
+    const startTime = new Date();
     try {
       const response = await axios.post(`${apiBase}/material_remix`, payload, {
         timeout: 120000,
       });
       if (response.data?.code !== 0 || !Array.isArray(response.data?.drafts)) {
         toast.error(response.data?.message || "混剪生成失败");
+        await electronService.pushRpaLog({
+          eventName: "素材混剪生成",
+          startTime,
+          endTime: new Date(),
+          executionQuantity: payload.output_count,
+          executionResult: "失败",
+          remark: response.data?.message || "混剪生成失败",
+        });
         return;
       }
       setDrafts(response.data.drafts);
       toast.success(`已生成 ${response.data.drafts.length} 个草稿`);
+      await electronService.pushRpaLog({
+        eventName: "素材混剪生成",
+        startTime,
+        endTime: new Date(),
+        executionQuantity: response.data.drafts.length,
+        executionResult: "成功",
+        remark: `videos=${payload.video_urls.length}`,
+      });
     } catch (error) {
-      toast.error(error?.response?.data?.message || error.message || "混剪生成失败");
+      const message = error?.response?.data?.message || error.message || "混剪生成失败";
+      toast.error(message);
+      await electronService.pushRpaLog({
+        eventName: "素材混剪生成",
+        startTime,
+        endTime: new Date(),
+        executionQuantity: payload.output_count,
+        executionResult: "失败",
+        remark: message,
+      });
     } finally {
       setIsGenerating(false);
     }

@@ -164,6 +164,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1366,
     height: 868,
+    title: '极易智能包装小助手',
     icon: iconPath,
     show: false, // 创建窗口但先隐藏，等页面加载完成后再显示
     webPreferences: {
@@ -237,9 +238,32 @@ function isExternalUrl(url) {
   return url && (url.startsWith('http://') || url.startsWith('https://'));
 }
 
+function isLoginAuthUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === 'idaas-auth.ecmax.cn';
+  } catch (error) {
+    return false;
+  }
+}
+
 // 全局拦截所有 webContents 的新窗口打开行为
 app.on('web-contents-created', (event, contents) => {
   contents.setWindowOpenHandler(({ url }) => {
+    if (isLoginAuthUrl(url)) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 600,
+          height: 680,
+          title: '账号登录',
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true
+          }
+        }
+      };
+    }
     if (isExternalUrl(url)) {
       shell.openExternal(url);
       return { action: 'deny' };
@@ -254,6 +278,7 @@ app.on('browser-window-created', (event, window) => {
   if (BrowserWindow.getAllWindows().length === 1) return;
   // 检测不是外部链接则放过
   const url = window.webContents.getURL();
+  if (isLoginAuthUrl(url)) return;
   if (!isExternalUrl(url)) return;
 
   window.webContents.once('did-finish-load', () => {

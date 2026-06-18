@@ -1,12 +1,31 @@
 import subprocess
 import os
+import pathlib
 import shutil
+import sys
 from typing import Optional
 from src.utils.logger import logger
 
 
-def _get_duration_with_ffprobe(file_path: str) -> Optional[int]:
+def _find_ffprobe() -> Optional[str]:
     ffprobe_path = shutil.which("ffprobe")
+    if ffprobe_path:
+        return ffprobe_path
+
+    app_root = pathlib.Path(getattr(sys, "_MEIPASS", pathlib.Path(__file__).resolve().parents[2]))
+    for candidate in (
+        app_root / "tools" / "ffprobe.exe",
+        app_root / "tools" / "ffprobe",
+        pathlib.Path(__file__).resolve().parents[2] / "tools" / "ffprobe.exe",
+        pathlib.Path(__file__).resolve().parents[2] / "tools" / "ffprobe",
+    ):
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def _get_duration_with_ffprobe(file_path: str) -> Optional[int]:
+    ffprobe_path = _find_ffprobe()
     if not ffprobe_path:
         logger.info("ffprobe not found, fallback to pymediainfo")
         return None
@@ -62,6 +81,36 @@ def _get_duration_with_pymediainfo(file_path: str) -> Optional[int]:
     return None
 
 
+def _get_duration_with_imageio_ffmpeg(file_path: str) -> Optional[int]:
+    try:
+        import imageio_ffmpeg
+    except Exception as exc:
+        logger.error(f"imageio_ffmpeg 不可用: {exc}")
+        return None
+
+    try:
+        ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+        result = subprocess.run(
+            [ffmpeg_path, "-i", file_path, "-f", "null", "-"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=30,
+        )
+    except Exception as exc:
+        logger.error(f"imageio_ffmpeg 执行失败: {exc}")
+        return None
+
+    output = f"{result.stdout}\n{result.stderr}"
+    match = __import__("re").search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", output)
+    if not match:
+        return None
+    hours = int(match.group(1))
+    minutes = int(match.group(2))
+    seconds = float(match.group(3))
+    return int((hours * 3600 + minutes * 60 + seconds) * 1_000_000)
+
+
 def get_media_duration(file_path: str) -> Optional[int]:
     """
     获取音视频文件的时长，返回微秒数
@@ -86,6 +135,8 @@ def get_media_duration(file_path: str) -> Optional[int]:
         duration_microseconds = _get_duration_with_ffprobe(file_path)
         if duration_microseconds is None:
             duration_microseconds = _get_duration_with_pymediainfo(file_path)
+        if duration_microseconds is None:
+            duration_microseconds = _get_duration_with_imageio_ffmpeg(file_path)
         if duration_microseconds is None:
             logger.warning(f"未能获取到文件时长: {file_path}")
             return None

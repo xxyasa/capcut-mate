@@ -1,0 +1,143 @@
+.login-page {
+  min-height: 100%;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  background:
+    linear-gradient(135deg, rgba(var(--primary-color-rgb), 0.12), rgba(var(--secondary-color-rgb), 0.08)),
+    #f5f7fa;
+}
+
+.login-panel {
+  width: 100%;
+  max-width: 420px;
+  padding: 28px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  box-shadow: 0 16px 36px rgba(21, 41, 95, 0.12);
+}
+
+.login-title {
+  text-align: center;
+  margin-bottom: 24px;
+
+  h1 {
+    margin: 0 0 8px;
+    color: #17233d;
+    font-size: 24px;
+    font-weight: 700;
+  }
+
+  p {
+    margin: 0;
+    color: #667085;
+    font-size: 14px;
+  }
+}
+
+.login-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 20px;
+  background: #eef3ff;
+  border-radius: 8px;
+
+  button {
+    height: 40px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #5d6b85;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  button.active {
+    background: #fff;
+    color: var(--primary-dark);
+    box-shadow: 0 4px 10px rgba(31, 80, 190, 0.12);
+  }
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    color: #344054;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  input {
+    height: 42px;
+    padding: 0 12px;
+    border: 1px solid #d0d5dd;
+    border-radius: 6px;
+    color: #101828;
+    font-size: 14px;
+    outline: none;
+  }
+
+  input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.12);
+  }
+}
+
+.login-hint {
+  padding: 12px;
+  border-radius: 6px;
+  background: #f0f6ff;
+  color: #475467;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.login-primary {
+  height: 44px;
+  border: 0;
+  border-radius: 6px;
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.login-primary:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.login-message {
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.login-message.error {
+  background: #fff1f0;
+  color: #cf1322;
+}
+
+.login-message.success {
+  background: #f6ffed;
+  color: #237804;
+}
+
+.login-message.info {
+  background: #e6f4ff;
+  color: #0958d9;
+}
