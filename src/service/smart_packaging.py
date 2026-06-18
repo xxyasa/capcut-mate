@@ -1591,6 +1591,17 @@ def _extract_font_id_from_rich_text(rich_text: str) -> str:
     return match.group(1) if match else ""
 
 
+def _extract_size_from_rich_text(rich_text: str) -> float | None:
+    match = re.search(r"<size=([0-9]+(?:\.[0-9]+)?)>", rich_text or "")
+    if not match:
+        return None
+    try:
+        size = float(match.group(1))
+    except ValueError:
+        return None
+    return size if size > 0 else None
+
+
 def _extract_color_from_rich_text(rich_text: str) -> List[float] | None:
     match = re.search(r"<color=\(([^)]+)\)>", rich_text or "")
     if not match:
@@ -1614,13 +1625,22 @@ def _template_text_color(child: dict, rich_text: str) -> List[float]:
     return [1.0, 1.0, 1.0]
 
 
-def _template_text_material_content(child: dict, text: str, font_size: float) -> dict:
+def _template_text_font_size(child: dict, fallback_font_size: float) -> float:
+    text_params = child.get("text_params") or {}
+    template_size = _extract_size_from_rich_text(str(text_params.get("richText") or ""))
+    if template_size:
+        return template_size
+    return fallback_font_size
+
+
+def _template_text_material_content(child: dict, text: str, font_size: float | None = None) -> dict:
     text_params = child.get("text_params") or {}
     rich_text = _replace_rich_text_text(str(text_params.get("richText") or ""), text)
     effect_id = ""
     effect_match = re.search(r'<effectStyle\s+id="([^"]+)"', rich_text)
     if effect_match:
         effect_id = effect_match.group(1)
+    resolved_font_size = font_size if font_size is not None else _template_text_font_size(child, 28.0)
 
     style = {
         "fill": {
@@ -1632,9 +1652,9 @@ def _template_text_material_content(child: dict, text: str, font_size: float) ->
                         "color": _template_text_color(child, rich_text),
                     },
                 },
-            },
+        },
         "range": [0, len(text.encode("utf-16-le"))],
-        "size": font_size,
+        "size": resolved_font_size,
         "bold": False,
         "italic": False,
         "underline": False,
@@ -1656,6 +1676,102 @@ def _template_text_effect_ids_for_child(child: dict) -> List[str]:
     text_params = child.get("text_params") or {}
     rich_text = str(text_params.get("richText") or "")
     return [match.group(1) for match in re.finditer(r'<effectStyle\s+id="([^"]+)"', rich_text)]
+
+
+def _template_rich_text_plain_text(child: dict) -> str:
+    text_params = child.get("text_params") or {}
+    rich_text = str(text_params.get("richText") or "")
+    match = re.search(r">(?:\[([^\]]+)\]|([^<>]*))</font>", rich_text)
+    if not match:
+        return ""
+    return str(match.group(1) or match.group(2) or "")
+
+
+def _estimate_text_visual_width(
+    text: str,
+    font_size: float,
+    original_size: Sequence[float] | None = None,
+    reference_text: str = "",
+) -> float:
+    visible_count = max(1, _visible_char_count(str(text or "")))
+    if original_size and len(original_size) >= 2:
+        try:
+            original_width = abs(float(original_size[0]))
+        except (TypeError, ValueError):
+            original_width = 0.0
+        if original_width > 0:
+            reference_count = max(1, _visible_char_count(str(reference_text or text or "")))
+            return original_width * visible_count / reference_count
+    return visible_count * max(1.0, font_size) * 1.25
+
+
+def _template_child_position(child: dict) -> tuple[float, float]:
+    position = child.get("position") if isinstance(child.get("position"), list) else []
+    try:
+        return (
+            float(position[0] if len(position) > 0 else 0.0),
+            float(position[1] if len(position) > 1 else 0.0),
+        )
+    except (TypeError, ValueError):
+        return 0.0, 0.0
+
+
+def _template_child_scale(child: dict) -> tuple[float, float]:
+    scale = child.get("scale") if isinstance(child.get("scale"), list) else []
+    try:
+        scale_x = abs(float(scale[0] if len(scale) > 0 else 1.0)) or 1.0
+        scale_y = abs(float(scale[1] if len(scale) > 1 else scale_x)) or scale_x
+    except (TypeError, ValueError):
+        scale_x, scale_y = 1.0, 1.0
+    return scale_x, scale_y
+
+
+def _layout_template_children_for_text(children: Sequence[dict], text: str) -> List[dict]:
+    primary_index = _template_primary_text_child_index(children)
+    if primary_index is None:
+        return [dict(child) for child in children]
+
+    primary = children[primary_index]
+    primary_x, _ = _template_child_position(primary)
+    primary_scale_x, _ = _template_child_scale(primary)
+    original_size = primary.get("original_size") if isinstance(primary.get("original_size"), list) else None
+    template_text = _template_rich_text_plain_text(primary)
+    template_font_size = _template_text_font_size(primary, 15.0)
+    template_width = _estimate_text_visual_width(template_text, template_font_size, original_size) * primary_scale_x
+    current_width = _estimate_text_visual_width(text, template_font_size, original_size, template_text) * primary_scale_x
+    half_delta_width = (current_width - template_width) / 2
+    if abs(half_delta_width) < 0.5:
+        return [dict(child) for child in children]
+
+    laid_out: List[dict] = []
+    for child in children:
+        next_child = dict(child)
+        if child.get("type") != "sticker":
+            laid_out.append(next_child)
+            continue
+        child_x, child_y = _template_child_position(child)
+        layout = child.get("layout_params") if isinstance(child.get("layout_params"), dict) else {}
+        left_bound = bool(layout.get("left_toLeftOf"))
+        right_bound = bool(layout.get("right_toRightOf"))
+        shift_x = 0.0
+        if left_bound and right_bound and template_width > 0:
+            scale = list(child.get("scale") if isinstance(child.get("scale"), list) else [1, 1, 1])
+            while len(scale) < 3:
+                scale.append(1)
+            scale[0] = float(scale[0]) * max(0.2, min(4.0, current_width / template_width))
+            next_child["scale"] = scale
+        elif left_bound or child_x < primary_x - template_width * 0.15:
+            shift_x = -half_delta_width
+        elif right_bound or child_x > primary_x + template_width * 0.15:
+            shift_x = half_delta_width
+        if shift_x:
+            position = list(child.get("position") if isinstance(child.get("position"), list) else [child_x, child_y, 0])
+            while len(position) < 3:
+                position.append(0)
+            position[0] = float(position[0]) + shift_x
+            next_child["position"] = position
+        laid_out.append(next_child)
+    return laid_out
 
 
 def _template_child_timerange(highlight: dict, child: dict, duration_scale: float) -> Timerange:
@@ -1750,6 +1866,7 @@ def _add_text_template_layers_to_draft(
     ]
     ordered_children.sort(key=lambda child: int(child.get("order_in_layer") or 0))
     ordered_children = _template_visible_children_for_highlight(ordered_children)
+    ordered_children = _layout_template_children_for_text(ordered_children, str(highlight.get("text") or ""))
     seed_text = f"{highlight.get('_source_caption_index', '')}:{highlight.get('text', '')}:{template_entry.get('material_id', '')}"
     template_randomizer = random.Random(seed_text)
     template_scale = _auto_text_template_scale(template_randomizer, highlight)
@@ -1768,11 +1885,12 @@ def _add_text_template_layers_to_draft(
 
         animations = _segment_animations_from_template(child, duration_scale)
         if child_type == "text":
+            template_font_size = _template_text_font_size(child, float(highlight.get("font_size", 28)))
             text_segment = TextSegment(
                 str(highlight.get("text") or ""),
                 timerange,
                 style=TextStyle(
-                    size=float(highlight.get("font_size", 28)),
+                    size=template_font_size,
                     color=(1.0, 1.0, 1.0),
                     alpha=1.0,
                     align=1,
@@ -1782,10 +1900,10 @@ def _add_text_template_layers_to_draft(
                 clip_settings=clip_settings,
             )
             _add_template_text_effect_refs(script, text_segment, child)
-            text_segment.export_material = lambda child=child, text=str(highlight.get("text") or ""), material_id=text_segment.material_id: {
+            text_segment.export_material = lambda child=child, text=str(highlight.get("text") or ""), material_id=text_segment.material_id, template_font_size=template_font_size: {
                 "id": material_id,
                 "content": json.dumps(
-                    _template_text_material_content(child, text, float(highlight.get("font_size", 28))),
+                    _template_text_material_content(child, text, template_font_size),
                     ensure_ascii=False,
                 ),
                 "typesetting": 0,

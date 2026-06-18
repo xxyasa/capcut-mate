@@ -1449,6 +1449,77 @@ def test_text_template_highlight_keeps_only_primary_text_layer():
     assert visible[0]["original_size"] == [600, 180]
 
 
+def test_text_template_uses_template_font_size_for_material_content():
+    child = {
+        "type": "text",
+        "text_params": {
+            "richText": '<effectStyle id="effect-a" path=""><size=15><font id="font-a" path="">[宝藏单品]</font></size></effectStyle>',
+        },
+    }
+
+    content = smart_packaging_module._template_text_material_content(child, "铁锈红")
+
+    assert content["styles"][0]["size"] == pytest.approx(15)
+    assert content["text"] == "铁锈红"
+
+
+def test_text_template_layout_moves_side_stickers_with_replaced_text_width():
+    children = [
+        {
+            "type": "sticker",
+            "position": [-300, 0, 0],
+            "scale": [1, 1, 1],
+            "layout_params": {"left_toLeftOf": "@text-a", "right_toRightOf": ""},
+        },
+        {
+            "type": "text",
+            "name": "text-a",
+            "position": [0, 0, 0],
+            "scale": [2, 2, 1],
+            "original_size": [300, 90],
+            "text_params": {
+                "richText": '<effectStyle id="effect-a" path=""><size=15><font id="font-a" path="">[超级福利日]</font></size></effectStyle>',
+            },
+        },
+        {
+            "type": "sticker",
+            "position": [300, 0, 0],
+            "scale": [1, 1, 1],
+            "layout_params": {"left_toLeftOf": "", "right_toRightOf": "@text-a"},
+        },
+    ]
+
+    laid_out = smart_packaging_module._layout_template_children_for_text(children, "好用")
+
+    assert laid_out[0]["position"][0] > children[0]["position"][0]
+    assert laid_out[2]["position"][0] < children[2]["position"][0]
+
+
+def test_text_template_layout_scales_stretched_sticker_with_text_width():
+    children = [
+        {
+            "type": "text",
+            "name": "text-a",
+            "position": [0, 0, 0],
+            "scale": [2, 2, 1],
+            "original_size": [300, 90],
+            "text_params": {
+                "richText": '<effectStyle id="effect-a" path=""><size=15><font id="font-a" path="">[好物]</font></size></effectStyle>',
+            },
+        },
+        {
+            "type": "sticker",
+            "position": [0, -90, 0],
+            "scale": [1, 1, 1],
+            "layout_params": {"left_toLeftOf": "@text-a", "right_toRightOf": "@text-a"},
+        },
+    ]
+
+    laid_out = smart_packaging_module._layout_template_children_for_text(children, "超级福利日")
+
+    assert laid_out[1]["scale"][0] > children[1]["scale"][0]
+
+
 def test_text_template_2_layers_keep_effects_and_animations(monkeypatch, tmp_path):
     template_entries = smart_packaging_module._load_jianying_text_template_entries(
         smart_packaging_module.DEFAULT_JIANYING_TEXT_TEMPLATE_DRAFT_DIR,
