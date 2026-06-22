@@ -42,7 +42,7 @@ class SmartPackagingCaptionConfig(BaseModel):
     jianying_text_template_draft_dir: Optional[str] = Field(default=None, description="剪映文字模板素材库草稿目录")
     text_template_names: List[str] = Field(default_factory=list, description="剪映文字模板名称池")
     highlight_max_count: int = Field(default=30, ge=0, le=30, description="单个视频最多生成重点花字数量上限")
-    highlight_max_chars: int = Field(default=5, ge=1, le=20, description="单条重点花字最大字数")
+    highlight_max_chars: int = Field(default=4, ge=1, le=4, description="单条重点花字最大字数")
     highlight_font_size: int = Field(default=28, ge=1, description="重点花字字号")
     text_template_scale: Optional[float] = Field(
         default=None,

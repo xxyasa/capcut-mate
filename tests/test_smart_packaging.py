@@ -481,7 +481,7 @@ def test_smart_packaging_falls_back_to_core_product_highlight_when_llm_term_is_b
             "enabled": True,
             "source": "manual",
             "highlight_max_count": 3,
-            "highlight_max_chars": 5,
+            "highlight_max_chars": 4,
         },
     )
 
@@ -508,7 +508,7 @@ def test_smart_packaging_only_extracts_product_like_highlights():
             "enabled": True,
             "source": "manual",
             "highlight_max_count": 5,
-            "highlight_max_chars": 5,
+            "highlight_max_chars": 4,
         },
     )
 
@@ -618,7 +618,7 @@ def test_smart_packaging_adds_highlights_on_separate_track(monkeypatch):
             "text_effects": ["花字A"],
             "in_animations": ["入场A"],
             "highlight_max_count": 2,
-            "highlight_max_chars": 5,
+            "highlight_max_chars": 4,
             "highlight_font_size": 30,
         },
         effects={"enabled": False},
@@ -697,7 +697,7 @@ def test_smart_packaging_extracts_short_product_highlight_terms(monkeypatch):
             "source": "manual",
             "text_effects": ["花字A"],
             "highlight_max_count": 8,
-            "highlight_max_chars": 5,
+            "highlight_max_chars": 4,
         },
         sound_effects={"enabled": True, "count": 6, "auto_for_highlights": True, "use_jianying_cache": False},
         effects={"enabled": False},
@@ -708,7 +708,7 @@ def test_smart_packaging_extracts_short_product_highlight_terms(monkeypatch):
     result = asyncio.run(smart_packaging_func(req))
 
     highlight_texts = [item["text"] for captions in caption_calls[1:] for item in captions]
-    assert all(len(text) <= 5 for text in highlight_texts)
+    assert all(len(text) <= 4 for text in highlight_texts)
     assert "橘黄色" in highlight_texts
     assert "铁锈红" in highlight_texts
     assert "格兰芬多" in highlight_texts
@@ -738,7 +738,7 @@ def test_smart_packaging_uses_llm_highlight_terms():
             "highlight_style_mode": "effect",
             "text_effects": ["花字A"],
             "highlight_max_count": 3,
-            "highlight_max_chars": 5,
+            "highlight_max_chars": 4,
         },
     )
 
@@ -763,7 +763,7 @@ def test_smart_packaging_limits_text_template_highlights_to_two_per_source_capti
             "enabled": True,
             "source": "manual",
             "highlight_max_count": 6,
-            "highlight_max_chars": 5,
+            "highlight_max_chars": 4,
         },
     )
 
@@ -791,7 +791,7 @@ def test_smart_packaging_skips_next_caption_after_highlight_caption_for_normal_t
             "enabled": True,
             "source": "manual",
             "highlight_max_count": 6,
-            "highlight_max_chars": 5,
+            "highlight_max_chars": 4,
         },
     )
 
@@ -817,7 +817,7 @@ def test_smart_packaging_allows_high_priority_terms_during_caption_cooldown():
             "enabled": True,
             "source": "manual",
             "highlight_max_count": 6,
-            "highlight_max_chars": 5,
+            "highlight_max_chars": 4,
         },
     )
 
@@ -842,7 +842,7 @@ def test_smart_packaging_uses_later_caption_when_cooldown_caption_has_no_highlig
             "enabled": True,
             "source": "manual",
             "highlight_max_count": 6,
-            "highlight_max_chars": 5,
+            "highlight_max_chars": 4,
         },
     )
 
@@ -898,7 +898,7 @@ def test_plain_caption_keywords_are_not_filtered_by_template_cooldown():
             "source": "manual",
             "keyword_color": "#ffff00",
             "highlight_max_count": 6,
-            "highlight_max_chars": 5,
+            "highlight_max_chars": 4,
         },
     )
     captions = [
@@ -931,7 +931,7 @@ def test_plain_caption_keywords_keep_more_than_two_terms_per_caption():
             "enabled": True,
             "source": "manual",
             "keyword_color": "#ffff00",
-            "highlight_max_chars": 5,
+            "highlight_max_chars": 4,
         },
     )
     captions = [
@@ -962,7 +962,7 @@ def test_smart_packaging_can_use_text_effect_highlight_mode():
             "text_effects": ["花字A"],
             "highlight_style_mode": "effect",
             "highlight_max_count": 1,
-            "highlight_max_chars": 5,
+            "highlight_max_chars": 4,
         },
     )
 
@@ -985,7 +985,7 @@ def test_smart_packaging_staggers_same_caption_highlights_by_text_position():
             "highlight_style_mode": "effect",
             "text_effects": ["花字A"],
             "highlight_max_count": 3,
-            "highlight_max_chars": 5,
+            "highlight_max_chars": 4,
         },
     )
 
@@ -1079,7 +1079,7 @@ def test_smart_packaging_allows_highlights_from_same_caption_to_overlap():
             "highlight_style_mode": "effect",
             "text_effects": ["花字A"],
             "highlight_max_count": 3,
-            "highlight_max_chars": 5,
+            "highlight_max_chars": 4,
         },
     )
     highlights = smart_packaging_module._build_highlight_captions(
@@ -1602,6 +1602,129 @@ def test_text_template_2_layers_keep_effects_and_animations(monkeypatch, tmp_pat
         for effect in script.materials.filters
     )
     assert any(track.track_type == smart_packaging_module.draft.TrackType.sticker for track in script.tracks.values())
+
+
+def test_text_template_layers_reuse_tracks_when_ranges_do_not_overlap(monkeypatch, tmp_path):
+    monkeypatch.setattr("config.DRAFT_DIR", str(tmp_path / "drafts"))
+    draft_url = smart_packaging_module.create_draft(1080, 1920)
+    draft_id = draft_url.split("draft_id=")[-1]
+    script = smart_packaging_module.DRAFT_CACHE[draft_id]
+    template_entry = {
+        "package_dir": "",
+        "material_id": "template-a",
+    }
+    content = {
+        "children": [
+            {
+                "type": "sticker",
+                "visible": True,
+                "order_in_layer": 1,
+                "sticker_resource_id": "sticker-a",
+                "start_time": 0,
+                "duration": 1,
+                "position": [0, 0, 0],
+                "scale": [1, 1, 1],
+                "original_size": [100, 100],
+            },
+            {
+                "type": "text",
+                "visible": True,
+                "order_in_layer": 2,
+                "start_time": 0,
+                "duration": 1,
+                "position": [0, 0, 0],
+                "scale": [1, 1, 1],
+                "original_size": [300, 90],
+                "text_params": {
+                    "richText": '<effectStyle id="effect-a" path=""><size=15><font id="font-a" path="">[好物]</font></size></effectStyle>',
+                },
+            },
+        ]
+    }
+    monkeypatch.setattr(smart_packaging_module, "_load_template_content", lambda package_dir: content)
+    monkeypatch.setattr(smart_packaging_module, "_build_text_template_dependency_index", lambda package_dir: {})
+
+    first = smart_packaging_module._add_text_template_layers_to_draft(
+        draft_url,
+        {"text": "好物", "start": 1_000_000, "end": 2_000_000, "font_size": 17},
+        template_entry,
+    )
+    second = smart_packaging_module._add_text_template_layers_to_draft(
+        draft_url,
+        {"text": "推荐", "start": 2_000_000, "end": 3_000_000, "font_size": 17},
+        template_entry,
+    )
+
+    assert len(first) == 2
+    assert len(second) == 2
+    template_track_names = sorted(name for name in script.tracks if name.startswith("text_template_layer_"))
+    assert template_track_names == ["text_template_layer_0_sticker", "text_template_layer_1_text"]
+    assert len(script.tracks["text_template_layer_0_sticker"].segments) == 2
+    assert len(script.tracks["text_template_layer_1_text"].segments) == 2
+    assert script.tracks["text_template_layer_0_sticker"].render_index < script.tracks["text_template_layer_1_text"].render_index
+
+
+def test_text_template_layers_use_new_lane_when_ranges_overlap(monkeypatch, tmp_path):
+    monkeypatch.setattr("config.DRAFT_DIR", str(tmp_path / "drafts"))
+    draft_url = smart_packaging_module.create_draft(1080, 1920)
+    draft_id = draft_url.split("draft_id=")[-1]
+    script = smart_packaging_module.DRAFT_CACHE[draft_id]
+    template_entry = {
+        "package_dir": "",
+        "material_id": "template-a",
+    }
+    content = {
+        "children": [
+            {
+                "type": "sticker",
+                "visible": True,
+                "order_in_layer": 1,
+                "sticker_resource_id": "sticker-a",
+                "start_time": 0,
+                "duration": 1,
+                "position": [0, 0, 0],
+                "scale": [1, 1, 1],
+                "original_size": [100, 100],
+            },
+            {
+                "type": "text",
+                "visible": True,
+                "order_in_layer": 2,
+                "start_time": 0,
+                "duration": 1,
+                "position": [0, 0, 0],
+                "scale": [1, 1, 1],
+                "original_size": [300, 90],
+                "text_params": {
+                    "richText": '<effectStyle id="effect-a" path=""><size=15><font id="font-a" path="">[好物]</font></size></effectStyle>',
+                },
+            },
+        ]
+    }
+    monkeypatch.setattr(smart_packaging_module, "_load_template_content", lambda package_dir: content)
+    monkeypatch.setattr(smart_packaging_module, "_build_text_template_dependency_index", lambda package_dir: {})
+
+    smart_packaging_module._add_text_template_layers_to_draft(
+        draft_url,
+        {"text": "好物", "start": 1_000_000, "end": 2_500_000, "font_size": 17},
+        template_entry,
+    )
+    smart_packaging_module._add_text_template_layers_to_draft(
+        draft_url,
+        {"text": "推荐", "start": 2_000_000, "end": 3_000_000, "font_size": 17},
+        template_entry,
+    )
+
+    template_track_names = sorted(name for name in script.tracks if name.startswith("text_template_layer_"))
+    assert template_track_names == [
+        "text_template_layer_0_sticker",
+        "text_template_layer_0_sticker_2",
+        "text_template_layer_1_text",
+        "text_template_layer_1_text_2",
+    ]
+    assert script.tracks["text_template_layer_0_sticker"].render_index < script.tracks["text_template_layer_1_text"].render_index
+    assert script.tracks["text_template_layer_0_sticker_2"].render_index < script.tracks["text_template_layer_1_text_2"].render_index
+    assert script.tracks["text_template_layer_1_text"].render_index < script.tracks["text_template_layer_0_sticker_2"].render_index
 
 
 def test_template_highlight_range_extends_around_source_caption():

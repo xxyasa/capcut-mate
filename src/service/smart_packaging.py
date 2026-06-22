@@ -809,7 +809,7 @@ def _highlight_core_term(text: str, max_chars: int) -> str:
 
 def _is_valid_highlight_term(text: str) -> bool:
     cleaned = str(text or "")
-    if not 2 <= _visible_char_count(cleaned) <= 5:
+    if not 2 <= _visible_char_count(cleaned) <= 4:
         return False
     if cleaned in HIGHLIGHT_WEAK_WORDS:
         return False
@@ -2017,6 +2017,67 @@ def _add_template_text_effect_refs_with_paths(
         script.materials.filters.append(text_effect)
 
 
+TEXT_TEMPLATE_TRACK_LANE_STRIDE = 1000
+TEXT_TEMPLATE_TRACK_TYPE_NAMES = ("text", "sticker")
+
+
+def _text_template_track_name(layer_index: int, child_type: str, lane_index: int = 0) -> str:
+    suffix = "" if lane_index == 0 else f"_{lane_index + 1}"
+    return f"text_template_layer_{layer_index}_{child_type}{suffix}"
+
+
+def _text_template_track_render_base(script) -> int:
+    render_base = getattr(script, "_smart_packaging_text_template_render_base", None)
+    if render_base is None:
+        render_base = script.next_track_render_index()
+        setattr(script, "_smart_packaging_text_template_render_base", render_base)
+    return int(render_base)
+
+
+def _text_template_track_render_index(script, layer_index: int, lane_index: int = 0) -> int:
+    return _text_template_track_render_base(script) + lane_index * TEXT_TEMPLATE_TRACK_LANE_STRIDE + layer_index
+
+
+def _track_has_time_overlap(track, start: int, end: int) -> bool:
+    return any(start < int(segment.end) and end > int(segment.start) for segment in getattr(track, "segments", []))
+
+
+def _text_template_lane_has_overlap(script, lane_index: int, layer_index: int, start: int, end: int) -> bool:
+    for child_type in TEXT_TEMPLATE_TRACK_TYPE_NAMES:
+        track = script.tracks.get(_text_template_track_name(layer_index, child_type, lane_index))
+        if track and _track_has_time_overlap(track, start, end):
+            return True
+    return False
+
+
+def _choose_text_template_track_lane(script, layer_timeranges: Sequence[tuple[int, object]]) -> int:
+    lane_index = 0
+    while True:
+        if all(
+            not _text_template_lane_has_overlap(
+                script,
+                lane_index,
+                layer_index,
+                int(timerange.start),
+                int(timerange.end),
+            )
+            for layer_index, timerange in layer_timeranges
+        ):
+            return lane_index
+        lane_index += 1
+
+
+def _ensure_text_template_track(script, track_type, layer_index: int, child_type: str, lane_index: int = 0) -> str:
+    track_name = _text_template_track_name(layer_index, child_type, lane_index)
+    if track_name not in script.tracks:
+        script.add_track(
+            track_type=track_type,
+            track_name=track_name,
+            absolute_index=_text_template_track_render_index(script, layer_index, lane_index),
+        )
+    return track_name
+
+
 def _add_text_template_layers_to_draft(
     draft_url: str,
     highlight: dict,
@@ -2065,14 +2126,19 @@ def _add_text_template_layers_to_draft(
     highlight = _align_highlight_template_to_side(script, highlight, ordered_children)
     highlight = _shift_highlight_template_inside_top_regions(script, highlight, ordered_children)
 
+    layer_timeranges = [
+        (layer_index, _template_child_timerange(highlight, child, duration_scale))
+        for layer_index, child in enumerate(ordered_children)
+    ]
+    track_lane = _choose_text_template_track_lane(script, layer_timeranges)
+
     segment_ids: List[str] = []
     for layer_index, child in enumerate(ordered_children):
         child_type = child.get("type")
-        timerange = _template_child_timerange(highlight, child, duration_scale)
+        timerange = layer_timeranges[layer_index][1]
         clip_settings = _template_clip_settings(script, highlight, child)
-        track_name = f"text_template_{helper.gen_unique_id()}_{layer_index}"
         track_type = draft.TrackType.text if child_type == "text" else draft.TrackType.sticker
-        script.add_track_ordered(track_type=track_type, track_name=track_name)
+        track_name = _ensure_text_template_track(script, track_type, layer_index, str(child_type), track_lane)
 
         animations = _segment_animations_from_template(child, duration_scale, dependency_index)
         if child_type == "text":

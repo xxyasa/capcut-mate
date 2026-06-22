@@ -557,7 +557,7 @@ function SmartPackagingPage() {
         jianying_text_template_draft_dir: jianyingTextTemplateDraftDir.trim() || undefined,
         text_template_names: selectedTextTemplateNames,
         highlight_max_count: 30,
-        highlight_max_chars: 5,
+        highlight_max_chars: 4,
         highlight_font_size: Number(highlightFontSize),
         highlight_transform_x_min: HIGHLIGHT_TRANSFORM_X_MIN,
         highlight_transform_x_max: HIGHLIGHT_TRANSFORM_X_MAX,
