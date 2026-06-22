@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import fnmatch
 import hashlib
 import json
 import shutil
@@ -11,6 +12,15 @@ AUDIO_SUFFIXES = {".mp3", ".wav", ".m4a", ".aac"}
 CACHE_BUCKETS = {"artistEffect", "effect"}
 ARTIST_EFFECT_PANELS = {"default", "flower"}
 IGNORE_PATTERNS = (".DS_Store", ".backup", "*.bak", "*.tmp")
+WINDOWS_INVALID_NAME_CHARS = set('<>:"\\|?*')
+WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{index}" for index in range(1, 10)),
+    *(f"LPT{index}" for index in range(1, 10)),
+}
 
 
 def load_json(path: Path):
@@ -18,10 +28,33 @@ def load_json(path: Path):
         return json.load(file)
 
 
+def is_ignored(name: str):
+    return any(fnmatch.fnmatch(name, pattern) for pattern in IGNORE_PATTERNS)
+
+
+def windows_safe_name(name: str):
+    safe = "".join("_" if char in WINDOWS_INVALID_NAME_CHARS or ord(char) < 32 else char for char in name)
+    safe = safe.rstrip(" .")
+    if not safe:
+        safe = "_"
+    stem = safe.split(".", 1)[0].upper()
+    if stem in WINDOWS_RESERVED_NAMES:
+        safe = f"_{safe}"
+    return safe
+
+
 def copytree(src: Path, dst: Path):
     if not src.exists():
         raise FileNotFoundError(f"Missing source directory: {src}")
-    shutil.copytree(src, dst, dirs_exist_ok=True, ignore=shutil.ignore_patterns(*IGNORE_PATTERNS))
+    for child in src.iterdir():
+        if is_ignored(child.name):
+            continue
+        safe_child = dst / windows_safe_name(child.name)
+        if child.is_dir():
+            copytree(child, safe_child)
+        else:
+            safe_child.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(child, safe_child)
 
 
 def parse_depends(depends_path: Path):
