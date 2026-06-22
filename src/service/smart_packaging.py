@@ -1125,21 +1125,20 @@ def _template_visible_children_for_highlight(children: Sequence[dict]) -> List[d
 
 def _scaled_template_children(children: Sequence[dict], target_scale: float) -> List[dict]:
     base_text_scale_x, base_text_scale_y = _template_primary_text_scale(children)
-    scale_factor_x = target_scale / base_text_scale_x
-    scale_factor_y = target_scale / base_text_scale_y
+    uniform_factor = target_scale / max(base_text_scale_x, base_text_scale_y, 0.001)
     scaled_children: List[dict] = []
     for child in children:
         scaled = dict(child)
         position = child.get("position") if isinstance(child.get("position"), list) else None
         if position:
             scaled["position"] = [
-                float(value) * (scale_factor_x if index == 0 else scale_factor_y) if index < 2 else value
+                float(value) * uniform_factor if index < 2 else value
                 for index, value in enumerate(position)
             ]
         scale = child.get("scale") if isinstance(child.get("scale"), list) else None
         if scale:
             scaled["scale"] = [
-                float(value) * (scale_factor_x if index == 0 else scale_factor_y) if index < 2 else value
+                float(value) * uniform_factor if index < 2 else value
                 for index, value in enumerate(scale)
             ]
         scaled_children.append(scaled)
@@ -1727,51 +1726,7 @@ def _template_child_scale(child: dict) -> tuple[float, float]:
 
 
 def _layout_template_children_for_text(children: Sequence[dict], text: str) -> List[dict]:
-    primary_index = _template_primary_text_child_index(children)
-    if primary_index is None:
-        return [dict(child) for child in children]
-
-    primary = children[primary_index]
-    primary_x, _ = _template_child_position(primary)
-    primary_scale_x, _ = _template_child_scale(primary)
-    original_size = primary.get("original_size") if isinstance(primary.get("original_size"), list) else None
-    template_text = _template_rich_text_plain_text(primary)
-    template_font_size = _template_text_font_size(primary, 15.0)
-    template_width = _estimate_text_visual_width(template_text, template_font_size, original_size) * primary_scale_x
-    current_width = _estimate_text_visual_width(text, template_font_size, original_size, template_text) * primary_scale_x
-    half_delta_width = (current_width - template_width) / 2
-    if abs(half_delta_width) < 0.5:
-        return [dict(child) for child in children]
-
-    laid_out: List[dict] = []
-    for child in children:
-        next_child = dict(child)
-        if child.get("type") != "sticker":
-            laid_out.append(next_child)
-            continue
-        child_x, child_y = _template_child_position(child)
-        layout = child.get("layout_params") if isinstance(child.get("layout_params"), dict) else {}
-        left_bound = bool(layout.get("left_toLeftOf"))
-        right_bound = bool(layout.get("right_toRightOf"))
-        shift_x = 0.0
-        if left_bound and right_bound and template_width > 0:
-            scale = list(child.get("scale") if isinstance(child.get("scale"), list) else [1, 1, 1])
-            while len(scale) < 3:
-                scale.append(1)
-            scale[0] = float(scale[0]) * max(0.2, min(4.0, current_width / template_width))
-            next_child["scale"] = scale
-        elif left_bound or child_x < primary_x - template_width * 0.15:
-            shift_x = -half_delta_width
-        elif right_bound or child_x > primary_x + template_width * 0.15:
-            shift_x = half_delta_width
-        if shift_x:
-            position = list(child.get("position") if isinstance(child.get("position"), list) else [child_x, child_y, 0])
-            while len(position) < 3:
-                position.append(0)
-            position[0] = float(position[0]) + shift_x
-            next_child["position"] = position
-        laid_out.append(next_child)
-    return laid_out
+    return [dict(child) for child in children]
 
 
 def _template_child_timerange(highlight: dict, child: dict, duration_scale: float) -> Timerange:

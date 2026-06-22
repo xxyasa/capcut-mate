@@ -1421,6 +1421,8 @@ def test_text_template_auto_scale_uses_stable_random_range():
     assert scaled[0]["scale"][0] == pytest.approx(scale)
     assert scaled[1]["scale"][0] == pytest.approx(children[1]["scale"][0] * scale / children[0]["scale"][0])
     assert abs(scaled[0]["position"][0]) == pytest.approx(abs(children[0]["position"][0] * scale / 1.6))
+    assert scaled[0]["scale"][0] / children[0]["scale"][0] == pytest.approx(scaled[0]["scale"][1] / children[0]["scale"][1])
+    assert scaled[1]["scale"][0] / children[1]["scale"][0] == pytest.approx(scaled[1]["scale"][1] / children[1]["scale"][1])
 
 
 def test_text_template_scaling_keeps_small_sticker_relative_size():
@@ -1434,6 +1436,22 @@ def test_text_template_scaling_keeps_small_sticker_relative_size():
     assert scaled[0]["scale"][0] == pytest.approx(1.0)
     assert scaled[1]["scale"][0] == pytest.approx(0.04)
     assert scaled[1]["position"][0] == pytest.approx(50)
+
+
+def test_text_template_scaling_keeps_relative_positions_uniformly():
+    children = [
+        {"type": "text", "position": [200, 100, 0], "scale": [2.0, 2.0, 1], "original_size": [500, 160]},
+        {"type": "sticker", "position": [-300, -150, 0], "scale": [0.4, 0.4, 1], "original_size": [200, 200]},
+    ]
+
+    scaled = smart_packaging_module._scaled_template_children(children, 0.5)
+
+    assert scaled[0]["position"][0] == pytest.approx(50)
+    assert scaled[0]["position"][1] == pytest.approx(25)
+    assert scaled[1]["position"][0] == pytest.approx(-75)
+    assert scaled[1]["position"][1] == pytest.approx(-37.5)
+    assert scaled[1]["position"][0] - scaled[0]["position"][0] == pytest.approx((-300 - 200) * 0.25)
+    assert scaled[1]["position"][1] - scaled[0]["position"][1] == pytest.approx((-150 - 100) * 0.25)
 
 
 def test_text_template_highlight_keeps_only_primary_text_layer():
@@ -1463,7 +1481,7 @@ def test_text_template_uses_template_font_size_for_material_content():
     assert content["text"] == "铁锈红"
 
 
-def test_text_template_layout_moves_side_stickers_with_replaced_text_width():
+def test_text_template_layout_preserves_original_child_positions():
     children = [
         {
             "type": "sticker",
@@ -1491,11 +1509,11 @@ def test_text_template_layout_moves_side_stickers_with_replaced_text_width():
 
     laid_out = smart_packaging_module._layout_template_children_for_text(children, "好用")
 
-    assert laid_out[0]["position"][0] > children[0]["position"][0]
-    assert laid_out[2]["position"][0] < children[2]["position"][0]
+    assert laid_out[0]["position"] == children[0]["position"]
+    assert laid_out[2]["position"] == children[2]["position"]
 
 
-def test_text_template_layout_scales_stretched_sticker_with_text_width():
+def test_text_template_layout_preserves_original_child_scale():
     children = [
         {
             "type": "text",
@@ -1517,7 +1535,7 @@ def test_text_template_layout_scales_stretched_sticker_with_text_width():
 
     laid_out = smart_packaging_module._layout_template_children_for_text(children, "超级福利日")
 
-    assert laid_out[1]["scale"][0] > children[1]["scale"][0]
+    assert laid_out[1]["scale"] == children[1]["scale"]
 
 
 def test_text_template_2_layers_keep_effects_and_animations(monkeypatch, tmp_path):
