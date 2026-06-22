@@ -1,0 +1,11 @@
+{
+    "app_version": "10.0.0",
+    "effect": {
+        "Link": [
+            {
+                "type": "TextStyle"
+            }
+        ]
+    },
+    "version": "16.6.0"
+}

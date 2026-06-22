@@ -1,0 +1,26 @@
+{
+	"version":	"1.0",
+	"mode":	2,
+	"name":	"AlgorithmGraph_1cIbncrbddAnbLZc4c6d",
+	"nodes":	[{
+			"name":	"blit_0",
+			"type":	"blit",
+			"config":	{
+				"size":	{
+					"width":	0,
+					"height":	0
+				},
+				"keyMaps":	{
+					"intParam":	{
+					},
+					"floatParam":	{
+					},
+					"stringParam":	{
+					},
+					"pathParam":	{
+					}
+				}
+			}
+		}],
+	"links":	[]
+}

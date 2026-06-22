@@ -1,0 +1,5 @@
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/7184797276181631546/c1572065fb14d444872f8de84a88b508/Transform.lua, 1781580006
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/7184797276181631546/c1572065fb14d444872f8de84a88b508/anim.prefab, 1781580006
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/7184797276181631546/c1572065fb14d444872f8de84a88b508/config.json, 1781580006
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/7184797276181631546/c1572065fb14d444872f8de84a88b508/content.json, 1781580006
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/7184797276181631546/c1572065fb14d444872f8de84a88b508/effect_platform_children.tag, 1781580006

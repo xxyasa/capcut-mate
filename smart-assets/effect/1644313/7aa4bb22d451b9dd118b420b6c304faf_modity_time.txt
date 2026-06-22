@@ -1,0 +1,12 @@
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/1644313/7aa4bb22d451b9dd118b420b6c304faf/BounceIn.lua, 1782110145
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/1644313/7aa4bb22d451b9dd118b420b6c304faf/Library/ShaderData/14ab9aaabcf49dcd44d19365d4044071/shaderGLES/d1aa77e46aafe520a38371cce2e90604.frag, 1782110145
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/1644313/7aa4bb22d451b9dd118b420b6c304faf/Library/ShaderData/14ab9aaabcf49dcd44d19365d4044071/shaderGLES/d1aa77e46aafe520a38371cce2e90604.vert, 1782110145
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/1644313/7aa4bb22d451b9dd118b420b6c304faf/Library/ShaderData/14ab9aaabcf49dcd44d19365d4044071/shaderMetal/7aa4bb22d451b9dd118b420b6c304faf_d1aa77e46aafe520a38371cce2e90604_26.5.0.metallib, 1781591383
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/1644313/7aa4bb22d451b9dd118b420b6c304faf/Library/ShaderData/14ab9aaabcf49dcd44d19365d4044071/shaderMetal/d1aa77e46aafe520a38371cce2e90604.frag, 1782110145
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/1644313/7aa4bb22d451b9dd118b420b6c304faf/Library/ShaderData/14ab9aaabcf49dcd44d19365d4044071/shaderMetal/d1aa77e46aafe520a38371cce2e90604.vert, 1782110145
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/1644313/7aa4bb22d451b9dd118b420b6c304faf/anim.prefab, 1782110145
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/1644313/7aa4bb22d451b9dd118b420b6c304faf/config.json, 1782110145
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/1644313/7aa4bb22d451b9dd118b420b6c304faf/content.json, 1782110145
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/1644313/7aa4bb22d451b9dd118b420b6c304faf/effect_platform_children.tag, 1782110145
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/1644313/7aa4bb22d451b9dd118b420b6c304faf/rt.material, 1782110145
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/1644313/7aa4bb22d451b9dd118b420b6c304faf/rt.xshader, 1782110145

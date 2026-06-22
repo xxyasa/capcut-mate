@@ -44,6 +44,10 @@ from src.service.save_draft import save_draft_async
 from src.utils.download import cleanup_temp_file, download
 from src.utils import helper
 from src.utils.draft_cache import DRAFT_CACHE
+from src.utils.jianying_cache import (
+    install_smart_packaging_cache_assets,
+    localize_jianying_cache_path,
+)
 from src.utils.logger import logger
 from src.utils.media import get_media_duration
 
@@ -320,6 +324,10 @@ DEFAULT_JIANYING_TEXT_TEMPLATE_DRAFT_DIR = os.getenv(
 DEFAULT_JIANYING_ARTIST_EFFECT_CACHE_DIR = os.getenv(
     "JIANYING_ARTIST_EFFECT_CACHE_DIR",
     os.path.expanduser("~/Movies/JianyingPro/User Data/Cache/artistEffect"),
+)
+DEFAULT_JIANYING_EFFECT_CACHE_DIR = os.getenv(
+    "JIANYING_EFFECT_CACHE_DIR",
+    os.path.expanduser("~/Movies/JianyingPro/User Data/Cache/effect"),
 )
 TEXT_TEMPLATE_BASE_WIDTH = 1080.0
 TEXT_TEMPLATE_BASE_HEIGHT = 1920.0
@@ -1037,6 +1045,20 @@ def _template_child_original_size(child: dict, highlight: dict) -> tuple[float, 
 
 
 def _template_child_bounds(child: dict, highlight: dict) -> tuple[float, float, float, float]:
+    layout_bounds = child.get("_layout_bounds")
+    if isinstance(layout_bounds, (list, tuple)) and len(layout_bounds) >= 4:
+        try:
+            transform_x = float(highlight.get("transform_x", 0.0))
+            transform_y = float(highlight.get("transform_y", 0.0))
+            return (
+                transform_x + float(layout_bounds[0]),
+                transform_y + float(layout_bounds[1]),
+                transform_x + float(layout_bounds[2]),
+                transform_y + float(layout_bounds[3]),
+            )
+        except (TypeError, ValueError):
+            pass
+
     position = child.get("position") if isinstance(child.get("position"), list) else [0, 0, 0]
     scale = child.get("scale") if isinstance(child.get("scale"), list) else [1, 1, 1]
     width, height = _template_child_original_size(child, highlight)
@@ -1113,6 +1135,88 @@ def _template_primary_text_child_index(children: Sequence[dict]) -> int | None:
     return max(candidates)[1]
 
 
+def _template_child_name(child: dict) -> str:
+    return str(child.get("name") or child.get("id") or "").strip()
+
+
+def _template_layout_ref(value: str | None) -> str:
+    return str(value or "").strip().lstrip("@")
+
+
+def _template_child_local_bounds(child: dict) -> tuple[float, float, float, float]:
+    position = child.get("position") if isinstance(child.get("position"), list) else [0, 0, 0]
+    scale = child.get("scale") if isinstance(child.get("scale"), list) else [1, 1, 1]
+    original_size = child.get("original_size") if isinstance(child.get("original_size"), list) else [220, 220]
+    try:
+        center_x = float(position[0] if position else 0.0)
+        center_y = float(position[1] if len(position) > 1 else 0.0)
+        width = abs(float(original_size[0] if original_size else 220.0))
+        height = abs(float(original_size[1] if len(original_size) > 1 else 220.0))
+        scale_x = abs(float(scale[0] if scale else 1.0)) or 1.0
+        scale_y = abs(float(scale[1] if len(scale) > 1 else scale[0])) or scale_x
+    except (TypeError, ValueError):
+        center_x, center_y = 0.0, 0.0
+        width, height = 220.0, 220.0
+        scale_x, scale_y = 1.0, 1.0
+    half_width = max(1.0, width * scale_x / 2)
+    half_height = max(1.0, height * scale_y / 2)
+    return center_x - half_width, center_y - half_height, center_x + half_width, center_y + half_height
+
+
+def _template_text_target_bounds(child: dict, text: str) -> tuple[float, float, float, float]:
+    left, bottom, right, top = _template_child_local_bounds(child)
+    position = child.get("position") if isinstance(child.get("position"), list) else [0, 0, 0]
+    scale = child.get("scale") if isinstance(child.get("scale"), list) else [1, 1, 1]
+    original_size = child.get("original_size") if isinstance(child.get("original_size"), list) else [right - left, top - bottom]
+    center_x = float(position[0] if position else 0.0)
+    center_y = float(position[1] if len(position) > 1 else 0.0)
+    scale_x = abs(float(scale[0] if scale else 1.0)) or 1.0
+    reference_text = _template_rich_text_plain_text(child)
+    font_size = _template_text_font_size(child, 28.0)
+    target_width = _estimate_text_visual_width(text, font_size, original_size, reference_text)
+    try:
+        original_width = abs(float(original_size[0] if original_size else target_width))
+    except (TypeError, ValueError):
+        original_width = target_width
+    min_width = max(60.0, original_width)
+    max_width = max(min_width, original_width * 1.8)
+    target_width = max(min_width, min(max_width, target_width))
+    half_width = target_width * scale_x / 2
+    return center_x - half_width, bottom, center_x + half_width, top
+
+
+def _template_bounds_center(bounds: tuple[float, float, float, float]) -> tuple[float, float]:
+    return (bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2
+
+
+def _template_apply_bounds_to_child(child: dict, bounds: tuple[float, float, float, float]) -> dict:
+    laid_out = dict(child)
+    center_x, center_y = _template_bounds_center(bounds)
+    position = list(child.get("position") if isinstance(child.get("position"), list) else [0, 0, 0])
+    while len(position) < 3:
+        position.append(0)
+    position[0] = center_x
+    position[1] = center_y
+    laid_out["position"] = position
+    laid_out["_layout_bounds"] = tuple(round(value, 4) for value in bounds)
+    return laid_out
+
+
+def _template_resize_child_to_bounds(child: dict, bounds: tuple[float, float, float, float]) -> dict:
+    laid_out = _template_apply_bounds_to_child(child, bounds)
+    original_size = child.get("original_size") if isinstance(child.get("original_size"), list) else None
+    scale = list(child.get("scale") if isinstance(child.get("scale"), list) else [1, 1, 1])
+    if original_size and len(original_size) >= 2:
+        width = max(1.0, abs(float(original_size[0] or 1.0)))
+        height = max(1.0, abs(float(original_size[1] or 1.0)))
+        while len(scale) < 3:
+            scale.append(1)
+        scale[0] = max(0.01, (bounds[2] - bounds[0]) / width)
+        scale[1] = max(0.01, (bounds[3] - bounds[1]) / height)
+        laid_out["scale"] = scale
+    return laid_out
+
+
 def _template_visible_children_for_highlight(children: Sequence[dict]) -> List[dict]:
     primary_text_index = _template_primary_text_child_index(children)
     visible_children: List[dict] = []
@@ -1141,6 +1245,12 @@ def _scaled_template_children(children: Sequence[dict], target_scale: float) -> 
                 float(value) * uniform_factor if index < 2 else value
                 for index, value in enumerate(scale)
             ]
+        layout_bounds = child.get("_layout_bounds")
+        if isinstance(layout_bounds, (list, tuple)) and len(layout_bounds) >= 4:
+            scaled["_layout_bounds"] = tuple(
+                float(value) * uniform_factor
+                for value in layout_bounds
+            )
         scaled_children.append(scaled)
     return scaled_children
 
@@ -1349,6 +1459,12 @@ def _resolve_artist_effect_cache_dir(path: str | None = None) -> str:
     return DEFAULT_JIANYING_ARTIST_EFFECT_CACHE_DIR
 
 
+def _resolve_effect_cache_dir(path: str | None = None) -> str:
+    if path:
+        return os.path.expanduser(path)
+    return DEFAULT_JIANYING_EFFECT_CACHE_DIR
+
+
 def _find_artist_effect_package(material_id: str, cache_dir: str) -> pathlib.Path | None:
     material_dir = pathlib.Path(cache_dir) / material_id
     if not material_dir.exists():
@@ -1477,6 +1593,78 @@ def _load_jianying_text_template_entries(
     return sorted(deduped_entries.values(), key=lambda item: (item["rank"], item["name"]))
 
 
+def _cache_path_parts(path_value: str) -> tuple[str, str, list[str]] | None:
+    if not path_value:
+        return None
+    parts = pathlib.Path(path_value).expanduser().parts
+    for index, part in enumerate(parts):
+        if part in {"artistEffect", "effect"} and index + 1 < len(parts):
+            return part, parts[index + 1], list(parts[index + 2:])
+    return None
+
+
+def _parse_template_depends(depends_path: pathlib.Path) -> List[dict]:
+    if not depends_path.is_file():
+        return []
+    records: dict[str, dict] = {}
+    try:
+        lines = depends_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    except Exception as exc:
+        logger.warning(f"Failed to read text template depends: {depends_path}, error={exc}")
+        return []
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("[") or line.startswith("size="):
+            continue
+        if "\\" not in line or "=" not in line:
+            continue
+        index, rest = line.split("\\", 1)
+        key, value = rest.split("=", 1)
+        records.setdefault(index, {})[key.strip()] = value.strip()
+    return [records[key] for key in sorted(records, key=lambda item: int(item) if item.isdigit() else item)]
+
+
+def _dependency_local_path(path_value: str, artist_effect_cache_dir: str, effect_cache_dir: str) -> str:
+    parsed = _cache_path_parts(path_value)
+    if not parsed:
+        return path_value if os.path.exists(path_value) else ""
+    bucket, key, rest = parsed
+    base_dir = artist_effect_cache_dir if bucket == "artistEffect" else effect_cache_dir
+    candidate = pathlib.Path(base_dir) / key
+    if rest:
+        candidate = candidate.joinpath(*rest)
+    if candidate.exists():
+        return localize_jianying_cache_path(str(candidate)) or str(candidate)
+    original = pathlib.Path(path_value).expanduser()
+    if original.exists():
+        return localize_jianying_cache_path(str(original)) or str(original)
+    return ""
+
+
+def _build_text_template_dependency_index(
+    package_dir: str,
+    artist_effect_cache_dir: str | None = None,
+    effect_cache_dir: str | None = None,
+) -> dict[str, dict]:
+    depends_path = pathlib.Path(package_dir) / "depends"
+    artist_dir = _resolve_artist_effect_cache_dir(artist_effect_cache_dir)
+    effect_dir = _resolve_effect_cache_dir(effect_cache_dir)
+    index: dict[str, dict] = {}
+    for record in _parse_template_depends(depends_path):
+        resource_id = str(record.get("id") or "").strip()
+        if not resource_id:
+            continue
+        raw_path = str(record.get("path") or "").strip()
+        panel = str(record.get("panel") or "").strip()
+        index[resource_id] = {
+            "id": resource_id,
+            "panel": panel,
+            "path": _dependency_local_path(raw_path, artist_dir, effect_dir),
+            "source_path": raw_path,
+        }
+    return index
+
+
 def _choose_jianying_text_template_effect(
     template_entries: Sequence[dict],
     selected_names: Sequence[str],
@@ -1535,19 +1723,22 @@ def _choose_jianying_text_template_entry(
 
 
 class _RawTextTemplateAnimation:
-    def __init__(self, animation_data: dict, duration_scale: float):
+    def __init__(self, animation_data: dict, duration_scale: float, dependency_index: dict[str, dict] | None = None):
         self.name = str(animation_data.get("anim_resource_id") or "")
         self.effect_id = str(animation_data.get("anim_resource_id") or "")
         self.resource_id = str(animation_data.get("anim_resource_id") or "")
+        dependency = (dependency_index or {}).get(self.resource_id, {})
+        self.panel = str(dependency.get("panel") or "")
+        self.path = str(dependency.get("path") or "")
         self.animation_type = _normalize_template_animation_type(animation_data.get("anim_type"))
         self.start = max(0, int(float(animation_data.get("anim_start_time") or 0) * 1_000_000 * duration_scale))
         self.duration = max(1, int(float(animation_data.get("duration") or 0) * 1_000_000 * duration_scale))
 
     def export_json(self) -> dict:
-        return {
+        data = {
             "anim_adjust_params": None,
             "platform": "all",
-            "panel": "",
+            "panel": self.panel,
             "material_type": "sticker",
             "name": self.name,
             "id": self.effect_id,
@@ -1556,6 +1747,9 @@ class _RawTextTemplateAnimation:
             "start": self.start,
             "duration": self.duration,
         }
+        if self.path:
+            data["path"] = self.path
+        return data
 
 
 def _normalize_template_animation_type(anim_type) -> str:
@@ -1565,7 +1759,11 @@ def _normalize_template_animation_type(anim_type) -> str:
     return "loop" if "loop" in value else "in"
 
 
-def _segment_animations_from_template(child: dict, duration_scale: float) -> SegmentAnimations | None:
+def _segment_animations_from_template(
+    child: dict,
+    duration_scale: float,
+    dependency_index: dict[str, dict] | None = None,
+) -> SegmentAnimations | None:
     anims = child.get("anims")
     if not isinstance(anims, list) or not anims:
         return None
@@ -1573,7 +1771,7 @@ def _segment_animations_from_template(child: dict, duration_scale: float) -> Seg
     for anim in anims:
         if not isinstance(anim, dict) or not anim.get("anim_resource_id"):
             continue
-        segment_animations.animations.append(_RawTextTemplateAnimation(anim, duration_scale))
+        segment_animations.animations.append(_RawTextTemplateAnimation(anim, duration_scale, dependency_index))
     if not segment_animations.animations:
         return None
     return segment_animations
@@ -1632,7 +1830,12 @@ def _template_text_font_size(child: dict, fallback_font_size: float) -> float:
     return fallback_font_size
 
 
-def _template_text_material_content(child: dict, text: str, font_size: float | None = None) -> dict:
+def _template_text_material_content(
+    child: dict,
+    text: str,
+    font_size: float | None = None,
+    dependency_index: dict[str, dict] | None = None,
+) -> dict:
     text_params = child.get("text_params") or {}
     rich_text = _replace_rich_text_text(str(text_params.get("richText") or ""), text)
     effect_id = ""
@@ -1661,9 +1864,11 @@ def _template_text_material_content(child: dict, text: str, font_size: float | N
     }
     font_id = _extract_font_id_from_rich_text(rich_text)
     if font_id:
-        style["font"] = {"id": font_id, "path": ""}
+        font_dependency = (dependency_index or {}).get(font_id, {})
+        style["font"] = {"id": font_id, "path": str(font_dependency.get("path") or "")}
     if effect_id:
-        style["effectStyle"] = {"id": effect_id, "path": ""}
+        effect_dependency = (dependency_index or {}).get(effect_id, {})
+        style["effectStyle"] = {"id": effect_id, "path": str(effect_dependency.get("path") or "")}
 
     return {
         "styles": [style],
@@ -1729,6 +1934,13 @@ def _layout_template_children_for_text(children: Sequence[dict], text: str) -> L
     return [dict(child) for child in children]
 
 
+def _find_template_child_by_name(children: Sequence[dict], name: str) -> dict:
+    for child in children:
+        if _template_child_name(child) == name:
+            return child
+    return {}
+
+
 def _template_child_timerange(highlight: dict, child: dict, duration_scale: float) -> Timerange:
     base_start = int(highlight["start"])
     base_duration = max(1, int(highlight["end"]) - base_start)
@@ -1783,6 +1995,28 @@ def _add_template_text_effect_refs(script, segment: TextSegment, child: dict) ->
         script.materials.filters.append(text_effect)
 
 
+def _add_template_text_effect_refs_with_paths(
+    script,
+    segment: TextSegment,
+    child: dict,
+    dependency_index: dict[str, dict] | None = None,
+) -> None:
+    for effect_id in _template_text_effect_ids_for_child(child):
+        dependency = (dependency_index or {}).get(effect_id, {})
+        text_effect = TextEffect(effect_id, effect_id)
+        if dependency.get("path"):
+            original_export_json = text_effect.export_json
+
+            def export_json(original_export_json=original_export_json, path=str(dependency.get("path") or "")):
+                data = original_export_json()
+                data["path"] = path
+                return data
+
+            text_effect.export_json = export_json
+        segment.extra_material_refs.append(text_effect.global_id)
+        script.materials.filters.append(text_effect)
+
+
 def _add_text_template_layers_to_draft(
     draft_url: str,
     highlight: dict,
@@ -1793,10 +2027,12 @@ def _add_text_template_layers_to_draft(
         return []
 
     script = DRAFT_CACHE[draft_id]
-    content = _load_template_content(str(template_entry.get("package_dir") or ""))
+    package_dir = str(template_entry.get("package_dir") or "")
+    content = _load_template_content(package_dir)
     children = content.get("children") if isinstance(content, dict) else None
     if not isinstance(children, list) or not children:
         return []
+    dependency_index = _build_text_template_dependency_index(package_dir)
 
     template_duration = max(
         [float(child.get("start_time") or 0) + float(child.get("duration") or 0) for child in children if isinstance(child, dict)] or [1.0]
@@ -1838,7 +2074,7 @@ def _add_text_template_layers_to_draft(
         track_type = draft.TrackType.text if child_type == "text" else draft.TrackType.sticker
         script.add_track_ordered(track_type=track_type, track_name=track_name)
 
-        animations = _segment_animations_from_template(child, duration_scale)
+        animations = _segment_animations_from_template(child, duration_scale, dependency_index)
         if child_type == "text":
             template_font_size = _template_text_font_size(child, float(highlight.get("font_size", 28)))
             text_segment = TextSegment(
@@ -1854,11 +2090,11 @@ def _add_text_template_layers_to_draft(
                 border=TextBorder(color=(0.0, 0.0, 0.0), width=20.0),
                 clip_settings=clip_settings,
             )
-            _add_template_text_effect_refs(script, text_segment, child)
-            text_segment.export_material = lambda child=child, text=str(highlight.get("text") or ""), material_id=text_segment.material_id, template_font_size=template_font_size: {
+            _add_template_text_effect_refs_with_paths(script, text_segment, child, dependency_index)
+            text_segment.export_material = lambda child=child, text=str(highlight.get("text") or ""), material_id=text_segment.material_id, template_font_size=template_font_size, dependency_index=dependency_index: {
                 "id": material_id,
                 "content": json.dumps(
-                    _template_text_material_content(child, text, template_font_size),
+                    _template_text_material_content(child, text, template_font_size, dependency_index),
                     ensure_ascii=False,
                 ),
                 "typesetting": 0,
@@ -1884,6 +2120,16 @@ def _add_text_template_layers_to_draft(
                 target_timerange=timerange,
                 clip_settings=clip_settings,
             )
+            sticker_dependency = dependency_index.get(sticker_resource_id, {})
+            if sticker_dependency.get("path"):
+                sticker_segment.export_material = lambda sticker_segment=sticker_segment, path=str(sticker_dependency.get("path") or ""): {
+                    "id": sticker_segment.material_id,
+                    "resource_id": sticker_segment.resource_id,
+                    "sticker_id": sticker_segment.resource_id,
+                    "source_platform": 1,
+                    "type": "sticker",
+                    "path": path,
+                }
             _add_segment_animations(script, sticker_segment, animations)
             script.add_segment(sticker_segment, track_name)
             segment_ids.append(sticker_segment.segment_id)
@@ -2706,6 +2952,36 @@ def _split_overlapping_captions_into_tracks(captions: List[dict]) -> List[List[d
     return _split_overlapping_items_into_tracks(captions)
 
 
+def _normalize_caption_timeline_for_single_track(
+    captions: List[dict],
+    *,
+    min_duration: int = 80_000,
+) -> List[dict]:
+    normalized: List[dict] = []
+    previous_end = 0
+
+    for caption in sorted(captions, key=lambda item: (int(item.get("start", 0)), int(item.get("end", 0)))):
+        try:
+            start = int(caption.get("start", 0))
+            end = int(caption.get("end", start))
+        except (TypeError, ValueError):
+            continue
+        if end <= start:
+            continue
+        if start < previous_end:
+            start = previous_end
+        if end - start < min_duration:
+            continue
+
+        next_caption = dict(caption)
+        next_caption["start"] = start
+        next_caption["end"] = end
+        normalized.append(next_caption)
+        previous_end = end
+
+    return normalized
+
+
 def _split_overlapping_audio_infos_into_tracks(audio_infos: List[dict]) -> List[List[dict]]:
     return _split_overlapping_items_into_tracks(audio_infos)
 
@@ -3054,6 +3330,7 @@ async def smart_packaging(req: SmartPackagingRequest) -> SmartPackagingResponse:
     total_duration = 0
 
     try:
+        install_smart_packaging_cache_assets()
         for index, video in enumerate(req.videos):
             prepared = await asyncio.to_thread(_prepare_video, video)
             prepared_items.append((index, video, prepared, total_duration, random.Random(base_seed + index)))
@@ -3170,6 +3447,7 @@ async def smart_packaging(req: SmartPackagingRequest) -> SmartPackagingResponse:
                 audio_ids.extend(next_audio_ids)
                 _append_applied(applied, "audio")
 
+            plain_caption_infos = _normalize_caption_timeline_for_single_track(plain_caption_infos)
             if plain_caption_infos:
                 _, _, _, caption_segment_ids, _ = await add_captions_async(
                     draft_url=draft_url,

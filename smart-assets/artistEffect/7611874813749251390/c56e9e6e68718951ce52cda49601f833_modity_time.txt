@@ -1,0 +1,4 @@
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7611874813749251390/c56e9e6e68718951ce52cda49601f833/1772353257616.jpg, 1782099482
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7611874813749251390/c56e9e6e68718951ce52cda49601f833/config.json, 1782099482
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7611874813749251390/c56e9e6e68718951ce52cda49601f833/cover_icon.png, 1782099482
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7611874813749251390/c56e9e6e68718951ce52cda49601f833/effectStyle.json, 1782099482

@@ -1,0 +1,12 @@
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/6908592686781960717/0172b79f5e955816b7dc32ff1b880783/T7135428706043003265.lua, 1781662915
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/6908592686781960717/0172b79f5e955816b7dc32ff1b880783/anim.prefab, 1781662915
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/6908592686781960717/0172b79f5e955816b7dc32ff1b880783/config.json, 1781662915
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/6908592686781960717/0172b79f5e955816b7dc32ff1b880783/content.json, 1781662915
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/6908592686781960717/0172b79f5e955816b7dc32ff1b880783/rt.frag, 1781662915
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/6908592686781960717/0172b79f5e955816b7dc32ff1b880783/rt.material, 1781662915
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/6908592686781960717/0172b79f5e955816b7dc32ff1b880783/rt.vert, 1781662915
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/6908592686781960717/0172b79f5e955816b7dc32ff1b880783/rt.xshader, 1781662915
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/6908592686781960717/0172b79f5e955816b7dc32ff1b880783/shaders/rt-0-6a5a/gles2/7e8c.frag, 1781662915
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/6908592686781960717/0172b79f5e955816b7dc32ff1b880783/shaders/rt-0-6a5a/gles2/7e8c.vert, 1781662915
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/6908592686781960717/0172b79f5e955816b7dc32ff1b880783/shaders/rt-0-6a5a/metal/7e8c.frag, 1781662915
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/6908592686781960717/0172b79f5e955816b7dc32ff1b880783/shaders/rt-0-6a5a/metal/7e8c.vert, 1781662915

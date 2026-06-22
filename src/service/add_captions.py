@@ -11,6 +11,7 @@ from src.utils import helper
 from src.schemas.add_captions import ShadowInfo
 from src.service.get_text_effects import resolve_text_effect
 from src.utils.draft_lock_manager import DraftLockManager
+from src.utils.jianying_cache import resolve_jianying_cache_resource_path
 
 
 FONT_ALIAS_MAP = {
@@ -628,6 +629,7 @@ def add_caption_to_draft(
                 in_duration = caption.get('in_animation_duration')
                 try:
                     text_segment.add_animation(in_animation_enum, duration=in_duration)
+                    _attach_text_animation_cache_path(text_segment, in_animation_enum)
                     logger.info(f"Added in animation: {in_animation_name}")
                 except Exception as e:
                     logger.error(f"Failed to add in animation '{in_animation_name}': {str(e)}")
@@ -642,6 +644,7 @@ def add_caption_to_draft(
                 out_duration = caption.get('out_animation_duration')
                 try:
                     text_segment.add_animation(out_animation_enum, duration=out_duration)
+                    _attach_text_animation_cache_path(text_segment, out_animation_enum)
                     logger.info(f"Added out animation: {out_animation_name}")
                 except Exception as e:
                     logger.error(f"Failed to add out animation '{out_animation_name}': {str(e)}")
@@ -656,6 +659,7 @@ def add_caption_to_draft(
                 loop_duration = caption.get('loop_animation_duration')
                 try:
                     text_segment.add_animation(loop_animation_enum, duration=loop_duration)
+                    _attach_text_animation_cache_path(text_segment, loop_animation_enum)
                     logger.info(f"Added loop animation: {loop_animation_name}")
                 except Exception as e:
                     logger.error(f"Failed to add loop animation '{loop_animation_name}': {str(e)}")
@@ -905,6 +909,34 @@ def map_animation_name_to_enum(animation_name: str, animation_type: str):
         return loop_animation_map.get(animation_name)
     
     return None
+
+
+def _attach_text_animation_cache_path(text_segment: TextSegment, animation_enum) -> None:
+    if not text_segment.animations_instance or not text_segment.animations_instance.animations:
+        return
+    meta = getattr(animation_enum, "value", None)
+    if not meta:
+        return
+    path = resolve_jianying_cache_resource_path(
+        "effect",
+        str(getattr(meta, "resource_id", "") or ""),
+        str(getattr(meta, "effect_id", "") or ""),
+        str(getattr(meta, "md5", "") or ""),
+    )
+    if not path:
+        return
+    animation = text_segment.animations_instance.animations[-1]
+    animation.panel = "text"
+    animation.path = path
+    original_export_json = animation.export_json
+
+    def export_json(original_export_json=original_export_json, path=path):
+        data = original_export_json()
+        data["panel"] = "text"
+        data["path"] = path
+        return data
+
+    animation.export_json = export_json
 
 
 def hex_to_rgb(hex_color: str) -> tuple:

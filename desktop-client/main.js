@@ -125,6 +125,7 @@ async function startBackend() {
       CAPCUT_MATE_DATA_DIR: backendDataDir,
       JIANYING_TEXT_TEMPLATE_DRAFT_DIR: path.join(assetsDir, 'text_templates', '文字模板2'),
       JIANYING_ARTIST_EFFECT_CACHE_DIR: path.join(assetsDir, 'artistEffect'),
+      JIANYING_EFFECT_CACHE_DIR: path.join(assetsDir, 'effect'),
       JIANYING_SOUND_DRAFT_DIR: path.join(assetsDir, 'sound_effects', '音效库2'),
       JIANYING_MUSIC_CACHE_DIR: path.join(assetsDir, 'music'),
       CAPCUT_MATE_HOST: '127.0.0.1',

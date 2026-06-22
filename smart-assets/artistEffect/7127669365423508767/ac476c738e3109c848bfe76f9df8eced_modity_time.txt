@@ -1,0 +1,17 @@
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7127669365423508767/ac476c738e3109c848bfe76f9df8eced/config.json, 1781662912
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7127669365423508767/ac476c738e3109c848bfe76f9df8eced/content.json, 1781662912
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7127669365423508767/ac476c738e3109c848bfe76f9df8eced/effect.prefab, 1781662912
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7127669365423508767/ac476c738e3109c848bfe76f9df8eced/image/1.png, 1781662912
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7127669365423508767/ac476c738e3109c848bfe76f9df8eced/image/1.png.meta, 1781662912
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7127669365423508767/ac476c738e3109c848bfe76f9df8eced/main.scene, 1781662912
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7127669365423508767/ac476c738e3109c848bfe76f9df8eced/material/effect.material, 1781662912
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7127669365423508767/ac476c738e3109c848bfe76f9df8eced/material/shadow.material, 1781662912
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7127669365423508767/ac476c738e3109c848bfe76f9df8eced/rt/outputTex.rt, 1781662912
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7127669365423508767/ac476c738e3109c848bfe76f9df8eced/sticker.config, 1781662912
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7127669365423508767/ac476c738e3109c848bfe76f9df8eced/texture/lieheng.png, 1781662912
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7127669365423508767/ac476c738e3109c848bfe76f9df8eced/texture/lieheng.png.meta, 1781662912
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7127669365423508767/ac476c738e3109c848bfe76f9df8eced/xshader/depth.frag, 1781662912
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7127669365423508767/ac476c738e3109c848bfe76f9df8eced/xshader/effect.frag, 1781662912
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7127669365423508767/ac476c738e3109c848bfe76f9df8eced/xshader/effect.vert, 1781662912
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7127669365423508767/ac476c738e3109c848bfe76f9df8eced/xshader/effect.xshader, 1781662912
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7127669365423508767/ac476c738e3109c848bfe76f9df8eced/xshader/shadow.xshader, 1781662912

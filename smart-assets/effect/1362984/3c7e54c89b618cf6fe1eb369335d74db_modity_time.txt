@@ -1,0 +1,4 @@
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/1362984/3c7e54c89b618cf6fe1eb369335d74db/EnlargeIn.lua, 1782099479
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/1362984/3c7e54c89b618cf6fe1eb369335d74db/anim.prefab, 1782099479
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/1362984/3c7e54c89b618cf6fe1eb369335d74db/config.json, 1782099479
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/effect/1362984/3c7e54c89b618cf6fe1eb369335d74db/content.json, 1782099479

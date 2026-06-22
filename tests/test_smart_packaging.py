@@ -1148,6 +1148,27 @@ def test_smart_packaging_splits_overlapping_highlights_into_multiple_tracks():
     assert [item["text"] for item in tracks[1]] == ["包身"]
 
 
+def test_smart_packaging_normalizes_plain_caption_timeline_for_single_track():
+    captions = smart_packaging_module._normalize_caption_timeline_for_single_track(
+        [
+            {"start": 212_681_714, "end": 214_744_571, "text": "我们家九号的也给大家"},
+            {"start": 214_744_571, "end": 215_982_285, "text": "去顺带的拿来"},
+            {"start": 213_043_084, "end": 214_593_084, "text": "25周年纪念款式的一"},
+            {"start": 215_982_285, "end": 217_220_000, "text": "看一看瞧瞧嗯"},
+        ]
+    )
+
+    assert [item["text"] for item in captions] == [
+        "我们家九号的也给大家",
+        "去顺带的拿来",
+        "看一看瞧瞧嗯",
+    ]
+    assert all(
+        captions[index]["end"] <= captions[index + 1]["start"]
+        for index in range(len(captions) - 1)
+    )
+
+
 def test_smart_packaging_splits_overlapping_highlight_sounds_into_multiple_tracks():
     tracks = smart_packaging_module._split_overlapping_audio_infos_into_tracks(
         [

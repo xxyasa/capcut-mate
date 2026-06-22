@@ -1,0 +1,3 @@
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7081900165778459941/76a3d098eef44cf2847e0cb92e7fd469/config.json, 1782099481
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7081900165778459941/76a3d098eef44cf2847e0cb92e7fd469/final.gif, 1782099481
+/Users/xinyu/Library/Containers/com.lemon.lvpro/Data/Movies/JianyingPro/User Data/Cache/artistEffect/7081900165778459941/76a3d098eef44cf2847e0cb92e7fd469/heycanInfo.json, 1782099481

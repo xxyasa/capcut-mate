@@ -1,0 +1,364 @@
+[
+    {
+        "ClassName": "Util",
+        "Super": "",
+        "FilePath": "Util.lua",
+        "FileAbsPath": "/Users/bytedance/lrc/\u5de5\u4f5c/2022/3-4\u6708/\u526a\u6620\u6587\u5b57-\u79d1\u6280\u611f-\u51fa\u5165\u573a/\u5165\u573a/Util.lua",
+        "Properties": [],
+        "Methods": [
+            {
+                "FuncName": "registerParams",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "getRegistedParams",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "setRegistedVal",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "getRootDir",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "registerRootDir",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "bezier",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "remap01",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "mix",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "CreateJsonFile",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "ReadFromJson",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "bezierWithParams",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "test",
+                "Params": [],
+                "Comment": ""
+            }
+        ],
+        "Comment": "",
+        "ExportFiles": []
+    },
+    {
+        "ClassName": "TextAnim",
+        "Super": "ScriptComponent",
+        "FilePath": "TextAnim.lua",
+        "FileAbsPath": "/Users/bytedance/lrc/\u5de5\u4f5c/2022/3-4\u6708/\u526a\u6620\u6587\u5b57-\u79d1\u6280\u611f-\u51fa\u5165\u573a/\u5165\u573a/TextAnim.lua",
+        "Properties": [
+            {
+                "VarName": "autoplay",
+                "VarType": "Bool",
+                "Comment": ""
+            },
+            {
+                "VarName": "isBlur",
+                "VarType": "Bool",
+                "Comment": ""
+            },
+            {
+                "VarName": "duration",
+                "VarType": "Double",
+                "Comment": ""
+            },
+            {
+                "VarName": "curTime",
+                "VarType": "Double",
+                "Comment": ""
+            },
+            {
+                "VarName": "progress",
+                "VarType": "Double",
+                "Comment": "",
+                "AnnoItems": [
+                    {
+                        "ItemType": "UI",
+                        "Attributes": [
+                            {
+                                "AttrType": "Range",
+                                "RawValue": "",
+                                "Values": [
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            {
+                                "AttrType": "Slider",
+                                "RawValue": "",
+                                "Values": []
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "VarName": "bezierValue1",
+                "VarType": "Vector4f",
+                "Comment": ""
+            },
+            {
+                "VarName": "bezierValue2",
+                "VarType": "Vector4f",
+                "Comment": ""
+            },
+            {
+                "VarName": "single_char_anim_time",
+                "VarType": "Double",
+                "Comment": "",
+                "AnnoItems": [
+                    {
+                        "ItemType": "UI",
+                        "Attributes": [
+                            {
+                                "AttrType": "Range",
+                                "RawValue": "",
+                                "Values": [
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            {
+                                "AttrType": "Slider",
+                                "RawValue": "",
+                                "Values": []
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "VarName": "bezierValue3",
+                "VarType": "Vector4f",
+                "Comment": ""
+            },
+            {
+                "VarName": "textAnimTimer",
+                "VarType": "Vector2f",
+                "Comment": ""
+            },
+            {
+                "VarName": "initialPosition_weight",
+                "VarType": "Double",
+                "Comment": "",
+                "AnnoItems": [
+                    {
+                        "ItemType": "UI",
+                        "Attributes": [
+                            {
+                                "AttrType": "Range",
+                                "RawValue": "",
+                                "Values": [
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            {
+                                "AttrType": "Slider",
+                                "RawValue": "",
+                                "Values": []
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "VarName": "fade_info",
+                "VarType": "Vector2f",
+                "Comment": ""
+            },
+            {
+                "VarName": "blur_info",
+                "VarType": "Vector4f",
+                "Comment": ""
+            }
+        ],
+        "Methods": [
+            {
+                "FuncName": "new",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "registerParams",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "constructor",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "transInitial",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "textInitial",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "onStart",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "initAnim",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "onUpdate",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "CreateJsonFile",
+                "Params": [],
+                "Comment": "",
+                "AnnoItems": [
+                    {
+                        "ItemType": "UI",
+                        "Attributes": [
+                            {
+                                "AttrType": "Button",
+                                "RawValue": "",
+                                "Values": [
+                                    "generate json file"
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "FuncName": "ReadFromJson",
+                "Params": [],
+                "Comment": "",
+                "AnnoItems": [
+                    {
+                        "ItemType": "UI",
+                        "Attributes": [
+                            {
+                                "AttrType": "Button",
+                                "RawValue": "",
+                                "Values": [
+                                    "read from json file"
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "FuncName": "seek",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "resetData",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "setDuration",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "clear",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "onEnter",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "onLeave",
+                "Params": [],
+                "Comment": ""
+            }
+        ],
+        "Comment": "",
+        "ExportFiles": []
+    },
+    {
+        "ClassName": "AETools",
+        "Super": "",
+        "FilePath": "AETools.lua",
+        "FileAbsPath": "/Users/bytedance/lrc/\u5de5\u4f5c/2022/3-4\u6708/\u526a\u6620\u6587\u5b57-\u79d1\u6280\u611f-\u51fa\u5165\u573a/\u5165\u573a/AETools.lua",
+        "Properties": [],
+        "Methods": [
+            {
+                "FuncName": "new",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "addKeyFrameInfo",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "_updateKeyFrameInfo",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "getCurPartVal",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "_getCurPart",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "clear",
+                "Params": [],
+                "Comment": ""
+            },
+            {
+                "FuncName": "test",
+                "Params": [],
+                "Comment": ""
+            }
+        ],
+        "Comment": "",
+        "ExportFiles": []
+    }
+]
